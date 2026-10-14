@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Daily Tracking</title>
+  <meta name="description" content="Plan tomorrow, tick off today, and track trades.">
+  <meta name="theme-color" content="#0c0a1d">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Daily Tracking">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="css/app.css">
+  <link rel="stylesheet" href="css/colors.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Daily Tracking</h1>
+    <button type="button" id="syncPill" class="pill" data-act="sync"><i class="muted"></i>Local only</button>
+    <button type="button" class="icon" data-act="settings" aria-label="Settings">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+  </header>
+
+  <main id="view"></main>
+
+  <nav class="tabbar">
+    <button type="button" data-act="tab" data-v="plan">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/></svg>
+      <span>Plan</span>
+    </button>
+    <button type="button" data-act="tab" data-v="trades">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg>
+      <span>Trades</span>
+    </button>
+    <button type="button" data-act="tab" data-v="calendar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+      <span>Calendar</span>
+    </button>
+    <button type="button" data-act="tab" data-v="stats">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+      <span>Stats</span>
+    </button>
+  </nav>
+
+  <!-- Trade form -->
+  <dialog id="tradeDlg" class="sheet">
+    <form id="tradeForm" autocomplete="off" novalidate>
+      <div class="sheethead">
+        <h2 id="tradeTitle" tabindex="-1" autofocus>New trade</h2>
+        <button type="button" class="icon" data-act="closeDlg" aria-label="Close">×</button>
+      </div>
+
+      <div class="seg three" role="radiogroup" aria-label="Pair">
+        <label><input type="radio" name="pair" value="NAS100"><span>NAS100</span></label>
+        <label><input type="radio" name="pair" value="XAUUSD"><span>XAUUSD</span></label>
+        <label><input type="radio" name="pair" value="EURUSD"><span>EURUSD</span></label>
+      </div>
+      <div class="seg two side" role="radiogroup" aria-label="Side">
+        <label class="buy"><input type="radio" name="side" value="Buy"><span>Buy</span></label>
+        <label class="sell"><input type="radio" name="side" value="Sell"><span>Sell</span></label>
+      </div>
+
+      <div class="grid3">
+        <label class="field"><span>Lot size</span><input name="lot" inputmode="decimal" placeholder="0.10"></label>
+        <label class="field"><span>Date</span><input type="date" name="date"></label>
+        <label class="field"><span>Time (Cambodia)</span><input type="time" name="time"></label>
+      </div>
+      <div class="seg three result" role="radiogroup" aria-label="Result">
+        <label class="win"><input type="radio" name="result" value="Win"><span>Win</span></label>
+        <label class="loss"><input type="radio" name="result" value="Loss"><span>Loss</span></label>
+        <label class="be"><input type="radio" name="result" value="BE"><span>BE</span></label>
+      </div>
+      <div class="grid3">
+        <label class="field"><span id="pointsLabel">Points</span><input name="points" inputmode="decimal" placeholder="100"></label>
+        <label class="field"><span id="slLabel">SL (pts)</span><input name="slPts" inputmode="decimal" placeholder="optional"></label>
+        <label class="field"><span>PnL ($)</span><input name="pnl" inputmode="decimal" placeholder="auto"></label>
+      </div>
+      <p id="pnlHint" class="pnlhint"></p>
+
+      <div id="preview" class="preview"></div>
+
+      <label class="field"><span>Note (optional)</span><input name="note" maxlength="200" placeholder="e.g. entered too early"></label>
+      <div id="shotBox"></div>
+
+      <div class="actions">
+        <button type="button" id="delTrade" class="btn danger" data-act="delTrade" hidden>Delete</button>
+        <button type="submit" class="btn primary grow">Save trade</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Screenshot viewer -->
+  <dialog id="shotDlg" class="viewer">
+    <button type="button" class="icon close" data-act="closeDlg" aria-label="Close">×</button>
+    <img id="shotFull" alt="Chart screenshot">
+  </dialog>
+
+  <!-- Settings -->
+  <dialog id="settingsDlg" class="sheet">
+    <form id="settingsForm" autocomplete="off">
+      <div class="sheethead">
+        <h2 tabindex="-1" autofocus>Settings</h2>
+        <button type="button" class="icon" data-act="closeDlg" aria-label="Close">×</button>
+      </div>
+
+      <h3 class="sub">Trading</h3>
+      <label class="field"><span>Daily loss limit ($)</span><input name="lossLimit" inputmode="decimal" placeholder="e.g. 100 (empty = off)"></label>
+      <p class="muted small">$ value of 1 point for <b>1.00 lot</b>. Used to calculate PnL from points × lot. Check your broker's contract size.</p>
+      <div class="grid3">
+        <label class="field"><span>NAS100 ($/pt)</span><input name="pv_NAS100" inputmode="decimal"></label>
+        <label class="field"><span>XAUUSD ($/pt)</span><input name="pv_XAUUSD" inputmode="decimal"></label>
+        <label class="field"><span>EURUSD ($/pip)</span><input name="pv_EURUSD" inputmode="decimal"></label>
+      </div>
+
+      <h3 class="sub">GitHub sync</h3>
+      <p class="muted small">Saves your data to your <b>private</b> repo so it's safe and the same on every device.</p>
+      <div class="grid2">
+        <label class="field"><span>GitHub username</span><input name="owner" autocapitalize="off" spellcheck="false"></label>
+        <label class="field"><span>Private data repo</span><input name="repo" autocapitalize="off" spellcheck="false"></label>
+      </div>
+      <label class="field"><span>Access token</span><input name="token" type="password" autocapitalize="off" spellcheck="false" placeholder="github_pat_…"></label>
+      <p id="syncInfo" class="syncinfo"></p>
+      <div class="actions">
+        <button type="button" class="btn primary grow" data-act="testSync">Connect &amp; sync</button>
+        <button type="button" class="btn ghost" id="disconnectBtn" data-act="disconnect">Disconnect</button>
+      </div>
+      <details class="help">
+        <summary>How to make a token</summary>
+        <ol>
+          <li>Open <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">github.com → Settings → Developer settings → Fine-grained tokens → Generate new token</a>.</li>
+          <li>Name it "Daily Tracking". Set expiration (1 year is fine).</li>
+          <li>Repository access: <b>Only select repositories</b> → pick <b>daily-tracking-data</b>.</li>
+          <li>Permissions → Repository → <b>Contents: Read and write</b>.</li>
+          <li>Generate, copy it, paste it above. Never share it with anyone.</li>
+        </ol>
+      </details>
+
+      <h3 class="sub">Appearance</h3>
+      <div class="seg three" role="radiogroup" aria-label="Theme">
+        <label><input type="radio" name="theme" value="dark"><span>Dark</span></label>
+        <label><input type="radio" name="theme" value="light"><span>Light</span></label>
+        <label><input type="radio" name="theme" value="auto"><span>Auto</span></label>
+      </div>
+
+      <h3 class="sub">Backup</h3>
+      <div class="actions">
+        <button type="button" class="btn ghost grow" data-act="exportData">⬇ Export backup</button>
+        <button type="button" class="btn ghost grow" data-act="importData">⬆ Import backup</button>
+        <input type="file" id="importInput" accept="application/json,.json" hidden>
+      </div>
+
+      <h3 class="sub">Install on your phone</h3>
+      <p class="muted small"><b>iPhone (Safari):</b> Share button → Add to Home Screen.<br>
+        <b>Android (Chrome):</b> ⋮ menu → Add to Home screen / Install app.</p>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="js/util.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

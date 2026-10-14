@@ -1,0 +1,136 @@
+/* Color layer on top of app.css: tab, pair and session colors, gradients. */
+:root {
+  --violet: #7c3aed; --blue: #2563eb; --orange: #ea580c; --pink: #db2777;
+  --c-nas: #4f46e5; --c-xau: #c98a00; --c-eur: #0891b2;
+  --c-asia: #ea580c; --c-london: #2563eb; --c-overlap: #9333ea; --c-ny: #db2777; --c-off: #64748b;
+  --tab: var(--violet);
+  --grad: linear-gradient(135deg, #7c3aed, #2563eb);
+  --page-glow: radial-gradient(900px 500px at 100% -10%, rgba(124, 58, 237, .10), transparent 60%),
+               radial-gradient(700px 500px at -10% 30%, rgba(37, 99, 235, .08), transparent 60%);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0c0a1d; --surface: #16132e; --surface-2: #211d40; --border: #2e2858;
+    --violet: #a78bfa; --blue: #60a5fa; --orange: #fb923c; --pink: #f472b6;
+    --c-nas: #818cf8; --c-xau: #fbbf24; --c-eur: #22d3ee;
+    --c-asia: #fb923c; --c-london: #60a5fa; --c-overlap: #c084fc; --c-ny: #f472b6; --c-off: #94a3b8;
+    --grad: linear-gradient(135deg, #8b5cf6, #3b82f6);
+    --page-glow: radial-gradient(900px 500px at 100% -10%, rgba(139, 92, 246, .22), transparent 60%),
+                 radial-gradient(700px 500px at -10% 35%, rgba(59, 130, 246, .14), transparent 60%);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0c0a1d; --surface: #16132e; --surface-2: #211d40; --border: #2e2858;
+  --violet: #a78bfa; --blue: #60a5fa; --orange: #fb923c; --pink: #f472b6;
+  --c-nas: #818cf8; --c-xau: #fbbf24; --c-eur: #22d3ee;
+  --c-asia: #fb923c; --c-london: #60a5fa; --c-overlap: #c084fc; --c-ny: #f472b6; --c-off: #94a3b8;
+  --grad: linear-gradient(135deg, #8b5cf6, #3b82f6);
+  --page-glow: radial-gradient(900px 500px at 100% -10%, rgba(139, 92, 246, .22), transparent 60%),
+               radial-gradient(700px 500px at -10% 35%, rgba(59, 130, 246, .14), transparent 60%);
+}
+
+body { background: var(--page-glow), var(--bg); background-attachment: fixed; }
+body[data-tab="plan"] { --tab: var(--violet); }
+body[data-tab="trades"] { --tab: var(--blue); }
+body[data-tab="calendar"] { --tab: var(--orange); }
+body[data-tab="stats"] { --tab: var(--pink); }
+
+/* Header */
+.topbar { background: color-mix(in srgb, var(--bg) 75%, transparent); }
+.topbar h1 {
+  background: linear-gradient(90deg, var(--violet), var(--blue), var(--pink));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+
+/* Buttons & chips */
+.btn.primary { background: var(--grad); border-color: transparent; box-shadow: 0 6px 18px -6px rgba(124, 58, 237, .55); }
+.chip.on { background: var(--grad); border-color: transparent; color: #fff; }
+.nav { color: var(--tab); }
+.datepick { border-color: color-mix(in srgb, var(--tab) 45%, var(--border)); }
+
+/* Tab bar: each tab its own color */
+.tabbar { background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.tabbar button svg { padding: 3px 14px; width: 52px; height: 30px; border-radius: 999px; transition: background .2s; }
+.tabbar button[data-v="plan"].on { color: var(--violet); }
+.tabbar button[data-v="trades"].on { color: var(--blue); }
+.tabbar button[data-v="calendar"].on { color: var(--orange); }
+.tabbar button[data-v="stats"].on { color: var(--pink); }
+.tabbar button.on svg { background: color-mix(in srgb, currentColor 18%, transparent); }
+
+/* Plan */
+.progress { border-top: 3px solid var(--violet); }
+.bar i { background: linear-gradient(90deg, #22c55e, #10b981, #06b6d4); }
+.task { border-left: 4px solid var(--violet); }
+.task.done { border-left-color: var(--pos); }
+.task.missed { border-left-color: var(--neg); }
+.box { border-color: var(--violet); }
+.check input:checked + .box { background: linear-gradient(135deg, #22c55e, #10b981); border-color: transparent; }
+.addrow input { border-color: color-mix(in srgb, var(--violet) 35%, var(--border)); }
+
+/* Today's PnL card */
+.hero { border-color: transparent; background: linear-gradient(135deg, color-mix(in srgb, var(--violet) 30%, var(--surface)), color-mix(in srgb, var(--blue) 22%, var(--surface))); }
+.hero.pos { background: linear-gradient(135deg, color-mix(in srgb, #10b981 32%, var(--surface)), color-mix(in srgb, #06b6d4 20%, var(--surface))); }
+.hero.neg { background: linear-gradient(135deg, color-mix(in srgb, #ef4444 32%, var(--surface)), color-mix(in srgb, #f97316 20%, var(--surface))); }
+.hero .muted { color: color-mix(in srgb, var(--text) 72%, transparent); }
+.hero .bar { background: color-mix(in srgb, var(--text) 14%, transparent); }
+
+/* Trades: color per pair */
+.trade, .card .trade { border-left: 4px solid var(--c-off); }
+.trade.p-NAS100 { border-left-color: var(--c-nas); }
+.trade.p-XAUUSD { border-left-color: var(--c-xau); }
+.trade.p-EURUSD { border-left-color: var(--c-eur); }
+.trade.p-NAS100 .pair { color: var(--c-nas); }
+.trade.p-XAUUSD .pair { color: var(--c-xau); }
+.trade.p-EURUSD .pair { color: var(--c-eur); }
+
+.sess { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; margin-left: 4px; }
+.s-asia { color: var(--c-asia); background: color-mix(in srgb, var(--c-asia) 16%, transparent); }
+.s-london { color: var(--c-london); background: color-mix(in srgb, var(--c-london) 16%, transparent); }
+.s-overlap { color: var(--c-overlap); background: color-mix(in srgb, var(--c-overlap) 16%, transparent); }
+.s-ny { color: var(--c-ny); background: color-mix(in srgb, var(--c-ny) 16%, transparent); }
+.s-off { color: var(--c-off); background: color-mix(in srgb, var(--c-off) 16%, transparent); }
+
+/* Trade form: pair buttons in their own color */
+.seg input[value="NAS100"]:checked + span { background: var(--c-nas); color: #fff; }
+.seg input[value="XAUUSD"]:checked + span { background: var(--c-xau); color: #1a1300; }
+.seg input[value="EURUSD"]:checked + span { background: var(--c-eur); color: #00222a; }
+.seg input[name="theme"]:checked + span { background: var(--grad); color: #fff; }
+.preview { background: linear-gradient(135deg, color-mix(in srgb, var(--violet) 14%, var(--surface-2)), color-mix(in srgb, var(--blue) 10%, var(--surface-2))); }
+.sheet { border-top: 3px solid transparent; background: linear-gradient(var(--surface), var(--surface)) padding-box, var(--grad) border-box; }
+
+/* Calendar */
+.statrow { border-top: 3px solid var(--orange); }
+.wd { color: var(--orange); }
+.day.pos { background: linear-gradient(160deg, color-mix(in srgb, #22c55e 35%, var(--surface)), color-mix(in srgb, #10b981 18%, var(--surface))); }
+.day.neg { background: linear-gradient(160deg, color-mix(in srgb, #ef4444 35%, var(--surface)), color-mix(in srgb, #f97316 15%, var(--surface))); }
+.day.today .dn { color: var(--orange); }
+.day.sel { outline-color: var(--orange); }
+
+/* Stats: each tile its own color */
+.tile { --tc: var(--violet); border-top: 3px solid var(--tc); background: linear-gradient(160deg, color-mix(in srgb, var(--tc) 16%, var(--surface)), var(--surface) 75%); }
+.tile:nth-child(6n+2) { --tc: var(--blue); }
+.tile:nth-child(6n+3) { --tc: var(--c-eur); }
+.tile:nth-child(6n+4) { --tc: var(--orange); }
+.tile:nth-child(6n+5) { --tc: var(--pink); }
+.tile:nth-child(6n+6) { --tc: var(--c-xau); }
+.tile b:not(.pos):not(.neg) { color: var(--tc); }
+.view > .card:has(.tbl) { border-top: 3px solid var(--pink); }
+.tbl .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 7px; background: var(--c-off); vertical-align: 1px; }
+.dot.k-NAS100 { background: var(--c-nas); }
+.dot.k-XAUUSD { background: var(--c-xau); }
+.dot.k-EURUSD { background: var(--c-eur); }
+.dot.k-Asia { background: var(--c-asia); }
+.dot.k-London { background: var(--c-london); }
+.dot.k-LondonNYoverlap { background: var(--c-overlap); }
+.dot.k-NewYork { background: var(--c-ny); }
+.dot.k-Buy { background: var(--pos); }
+.dot.k-Sell { background: var(--neg); }
+
+.hero.pos, .hero.neg { color: var(--text); }
+.hero .big.pos { color: var(--pos); }
+.hero .big.neg { color: var(--neg); }
+
+/* Trade form: result buttons */
+.result .win input:checked + span { background: var(--pos); color: #fff; }
+.result .loss input:checked + span { background: var(--neg); color: #fff; }
+.result .be input:checked + span { background: var(--c-off); color: #fff; }
