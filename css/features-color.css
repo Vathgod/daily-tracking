@@ -100,3 +100,49 @@
 }
 #reviewBody .sub:nth-of-type(2) { background: linear-gradient(135deg, #10b981, #06b6d4); }
 #reviewBody .sub:nth-of-type(3) { background: linear-gradient(135deg, #f59e0b, #f97316); }
+
+/* ---------- Money: green ---------- */
+:root { --c-money: #059669; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --c-money: #34d399; }
+}
+:root[data-theme="dark"] { --c-money: #34d399; }
+
+body[data-tab="money"] { --tab: var(--c-money); }
+.tabbar button[data-v="money"].on { color: var(--c-money); }
+.tabbar button svg { padding: 3px 10px; width: 44px; }
+
+.hero.spend { background: linear-gradient(135deg, color-mix(in srgb, #10b981 28%, var(--surface)), color-mix(in srgb, #84cc16 16%, var(--surface))); }
+.hero.spend .big { color: var(--text); }
+.hero.spend .limit .bar i { background: linear-gradient(90deg, #22c55e, #10b981); }
+.hero.spend .limit.warn .bar i { background: var(--amber); }
+.hero.spend .limit.hit .bar i { background: var(--neg); }
+body[data-tab="money"] .statrow { border-top-color: var(--c-money); }
+.exp { border-left: 4px solid var(--c-money); }
+.catbreak { border-top: 3px solid var(--c-money); }
+.catbreak .bar i { background: linear-gradient(90deg, #10b981, #84cc16); }
+
+.cur input:checked + span { background: var(--c-money); color: #fff; }
+.method .cash input:checked + span { background: #16a34a; color: #fff; }
+.method .aba input:checked + span { background: #0e5a8a; color: #fff; }
+.catpick input:checked + span { background: var(--c-money); border-color: transparent; color: #fff; }
+
+/* Calendar in Money mode */
+.day.spent { background: color-mix(in srgb, var(--c-money) 22%, var(--surface)); border-color: transparent; }
+.day.spent .dp { color: var(--text); }
+.legend i.lg-pos { background: #22c55e; }
+.legend i.lg-neg { background: #ef4444; }
+
+#reviewBody h3.sub.spend { background: linear-gradient(135deg, #10b981, #84cc16); }
+
+.wallet { border-top: 3px solid var(--c-money); background: linear-gradient(160deg, color-mix(in srgb, var(--c-money) 14%, var(--surface)), var(--surface) 70%); }
+.wallet > .bar i { background: linear-gradient(90deg, #10b981, #84cc16); }
+.wallet.warn > .bar i { background: var(--amber); }
+.wallet.warn { border-top-color: var(--amber); }
+.wallet.hit { border-top-color: var(--neg); }
+.histrow { border-left: 4px solid var(--c-money); }
+.histrow:has(.h-left.neg) { border-left-color: var(--neg); }
+.wallet .limit { margin-top: 2px; }
+.wallet .limit .bar i { background: linear-gradient(90deg, #22c55e, #10b981); }
+.wallet .limit.warn .bar i { background: var(--amber); }
+.wallet .limit.hit .bar i { background: var(--neg); }

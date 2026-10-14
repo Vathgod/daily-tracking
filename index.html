@@ -38,6 +38,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg>
       <span>Trades</span>
     </button>
+    <button type="button" data-act="tab" data-v="money">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0 0 4h15v4"/><path d="M3 5v14a2 2 0 0 0 2 2h15v-4"/><path d="M16 11h5v6h-5a3 3 0 0 1 0-6z"/></svg>
+      <span>Money</span>
+    </button>
     <button type="button" data-act="tab" data-v="calendar">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
       <span>Calendar</span>
@@ -178,6 +182,96 @@
     </form>
   </dialog>
 
+  <!-- Expense form -->
+  <dialog id="expDlg" class="sheet">
+    <form id="expForm" autocomplete="off" novalidate>
+      <div class="sheethead">
+        <h2 id="expTitle" tabindex="-1" autofocus>New expense</h2>
+        <button type="button" class="icon" data-act="closeDlg" aria-label="Close">×</button>
+      </div>
+
+      <div class="amtrow">
+        <label class="field grow"><span>Amount</span><input name="amount" inputmode="decimal" placeholder="0"></label>
+        <div class="seg two cur" role="radiogroup" aria-label="Currency">
+          <label><input type="radio" name="cur" value="KHR"><span>៛ Riel</span></label>
+          <label><input type="radio" name="cur" value="USD"><span>$ Dollar</span></label>
+        </div>
+      </div>
+      <p id="expHint" class="pnlhint"></p>
+
+      <div class="field"><span>What for?</span>
+        <div id="catPick" class="catpick" role="radiogroup" aria-label="Category"></div>
+      </div>
+
+      <div class="seg two method" role="radiogroup" aria-label="Paid with">
+        <label class="cash"><input type="radio" name="method" value="cash"><span>💵 Cash</span></label>
+        <label class="aba"><input type="radio" name="method" value="aba"><span>🏦 ABA</span></label>
+      </div>
+
+      <div class="grid2">
+        <label class="field"><span>Date</span><input type="date" name="date"></label>
+        <label class="field"><span>Time</span><input type="time" name="time"></label>
+      </div>
+      <label class="field"><span>Note (optional)</span><input name="note" maxlength="200" placeholder="e.g. lunch with friends"></label>
+
+      <div class="actions">
+        <button type="button" id="delExp" class="btn danger" data-act="delExp" hidden>Delete</button>
+        <button type="submit" class="btn primary grow">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Week's money -->
+  <dialog id="allowDlg" class="sheet">
+    <form id="allowForm" autocomplete="off" novalidate>
+      <div class="sheethead">
+        <h2 tabindex="-1" autofocus>👛 Week's money</h2>
+        <button type="button" class="icon" data-act="closeDlg" aria-label="Close">×</button>
+      </div>
+      <p id="allowWeek" class="muted small"></p>
+      <div class="amtrow">
+        <label class="field grow"><span>Money to spend this week</span><input name="amount" inputmode="decimal" placeholder="0"></label>
+        <div class="seg two cur" role="radiogroup" aria-label="Currency">
+          <label><input type="radio" name="cur" value="KHR"><span>៛ Riel</span></label>
+          <label><input type="radio" name="cur" value="USD"><span>$ Dollar</span></label>
+        </div>
+      </div>
+      <p id="allowHint" class="pnlhint"></p>
+      <div class="actions">
+        <button type="button" id="delAllow" class="btn danger" data-act="delAllow" hidden>Remove</button>
+        <button type="submit" class="btn primary grow">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- One week of spending -->
+  <dialog id="weekDlg" class="sheet">
+    <div class="sheetbody">
+      <div class="sheethead">
+        <h2 id="weekTitle" tabindex="-1" autofocus>Week</h2>
+        <button type="button" class="icon" data-act="closeDlg" aria-label="Close">×</button>
+      </div>
+      <div id="weekBody" class="weekbody"></div>
+    </div>
+  </dialog>
+
+  <!-- Categories -->
+  <dialog id="catDlg" class="sheet">
+    <form id="catForm" autocomplete="off" novalidate>
+      <div class="sheethead">
+        <h2 tabindex="-1" autofocus>Categories</h2>
+        <button type="button" class="icon" data-act="closeDlg" aria-label="Close">×</button>
+      </div>
+      <p class="muted small">Tap a name or emoji to change it. Deleting a category moves its spending to Other.</p>
+      <ul id="catList" class="catlist"></ul>
+      <div class="catrow add">
+        <input name="newEmoji" maxlength="4" placeholder="🙂" aria-label="Emoji">
+        <input name="newName" maxlength="30" placeholder="New category, e.g. Gym" aria-label="Category name">
+        <button type="button" class="btn primary" data-act="addCat">Add</button>
+      </div>
+    </form>
+  </dialog>
+
   <!-- Weekly review -->
   <dialog id="reviewDlg" class="sheet">
     <div class="sheetbody">
@@ -262,6 +356,7 @@
   <script src="js/store.js"></script>
   <script src="js/accounts.js"></script>
   <script src="js/perf.js"></script>
+  <script src="js/money.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

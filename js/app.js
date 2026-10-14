@@ -18,6 +18,9 @@ const ui = {
   statsTo: U.today(),
   statsSection: lsGet('dt.statsSec', 'trading'),
   calMode: 'pnl',
+  moneyRange: 'week',
+  histAll: false,
+  weekOpen: null,
   acct: lsGet('dt.acct', 'all'),
 };
 
@@ -569,7 +572,368 @@ function saveAcct() {
   toast(old ? 'Account updated' : 'Account added');
 }
 
+// ---------- Money ----------
+
+function expRow(e) {
+  const c = Money.cat(e.cat);
+  const meta = [e.time, METHODS[e.method] || METHODS.cash].filter(Boolean).map(U.esc).join(' · ');
+  return `<button type="button" class="exp" data-act="openExp" data-id="${e.id}">
+    <span class="ex-emo" aria-hidden="true">${U.esc(c.emoji || '•')}</span>
+    <span class="ex-main"><b>${U.esc(c.name)}</b><small>${meta}</small>${e.note ? `<small class="note">${U.esc(e.note)}</small>` : ''}</span>
+    <span class="ex-amt"><b>${U.money(Money.usd(e), false)}</b>${e.cur === 'KHR' ? `<small>${Money.fmtKHR(U.num(e.amount))}</small>` : ''}</span>
+  </button>`;
+}
+
+function expGroups(list) {
+  const groups = new Map();
+  for (const e of list) {
+    if (!groups.has(e.date)) groups.set(e.date, []);
+    groups.get(e.date).push(e);
+  }
+  return [...groups].map(([date, items]) => {
+    const t = Money.total(items);
+    const limit = Money.dailyBudget(date);
+    return `<h3 class="dayhead"><span>${U.esc(U.dayLabel(date))}</span><span class="${limit && t > limit ? 'neg' : ''}">${U.money(t, false)}</span></h3>
+      <div class="explist">${items.map(expRow).join('')}</div>`;
+  }).join('');
+}
+
+function catBreakdown(list) {
+  const rows = Money.byCat(list);
+  if (!rows.length) return '';
+  const total = Money.total(list);
+  const top = rows[0].usd;
+  return `<div class="card catbreak">
+    <h4 class="sub">Where it went</h4>
+    ${rows.map(r => {
+      const c = Money.cat(r.id);
+      return `<div class="cb-row">
+        <div class="row small"><span>${U.esc(c.emoji || '•')} ${U.esc(c.name)} <span class="muted">· ${r.n}×</span></span>
+          <span><b>${U.money(r.usd, false)}</b> <span class="muted">${Math.round(r.usd / total * 100)}%</span></span></div>
+        <div class="bar"><i style="width:${top > 0 ? Math.max(2, r.usd / top * 100) : 0}%"></i></div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+function spendBanner(spent) {
+  const limit = Money.dailyBudget(U.today());
+  if (!limit) return '';
+  if (spent > limit) return `<div class="banner red">🛑 You're ${U.money(spent - limit, false)} over today's limit.</div>`;
+  if (spent >= limit * 0.75) return `<div class="banner amber">⚠️ Only ${U.money(limit - spent, false)} left to spend today.</div>`;
+  return '';
+}
+
+// Today against the daily limit (the week's money ÷ 5).
+function todayBlock(spent, limit) {
+  const pct = spent / limit * 100;
+  return `<div class="limit ${riskLevel(pct)}">
+      <div class="row small"><span>Today</span><span><b>${U.money(spent, false)}</b> / ${U.money(limit, false)} · ${spent > limit ? `<b class="neg">${U.money(spent - limit, false)} over</b>` : `${U.money(limit - spent, false)} left`}</span></div>
+      <div class="bar"><i style="width:${Math.min(100, pct)}%"></i></div>
+    </div>`;
+}
+
+// Wallet for one spending week (Sunday to Saturday).
+function walletCard(ws) {
+  const w = Money.week(ws);
+  const today = U.today();
+  const current = ws === Money.weekStart(today);
+  const head = `<div class="row"><b>👛 ${current ? 'This week' : 'Week'}</b><span class="muted small">${U.esc(Money.weekLabel(ws))}</span></div>`;
+  if (!w.a) {
+    return `<div class="card wallet">
+      ${head}
+      <p class="muted small">How much money do you have to spend ${current ? 'this week' : 'for this week'}?</p>
+      ${w.spent ? `<p class="small">Spent so far: <b>${U.money(w.spent, false)}</b></p>` : ''}
+      <button type="button" class="btn primary block" data-act="setAllow" data-v="${ws}">+ Add week's money</button>
+    </div>`;
+  }
+  const pctLeft = w.got > 0 ? Math.max(0, Math.min(100, w.left / w.got * 100)) : 0;
+  const level = w.left < 0 ? 'hit' : pctLeft <= 25 ? 'warn' : '';
+  const daysLeft = 7 - (U.weekdayMon(today) + 1) % 7; // including today
+  const daily = w.got / SPEND_DAYS;
+  const spentToday = current ? Money.total(Money.list(today, today)) : 0;
+  return `<div class="card wallet ${level}">
+    ${head}
+    <div class="w-left">
+      <span class="muted small">${w.left < 0 ? 'Over budget by' : current ? 'Left in wallet' : 'Left over'}</span>
+      <span class="big ${w.left < 0 ? 'neg' : ''}">${U.money(Math.abs(w.left), false)}</span>
+      ${w.a.cur === 'KHR' ? `<span class="muted small">≈ ${Money.fmtKHR(Math.abs(w.left) * KHR_PER_USD)}</span>` : ''}
+    </div>
+    <div class="bar"><i style="width:${pctLeft}%"></i></div>
+    <div class="w-stats">
+      <div><span>Week's money</span><b>${Money.fmtOrig(w.a)}</b></div>
+      <div><span>Spent</span><b>${U.money(w.spent, false)}</b></div>
+      <div><span>Daily limit</span><b>${U.money(daily, false)}</b></div>
+    </div>
+    ${current ? todayBlock(spentToday, daily) : ''}
+    ${current ? `<p class="muted small w-note">${daysLeft} day${daysLeft === 1 ? '' : 's'} left until Saturday · daily limit = money ÷ ${SPEND_DAYS}</p>` : ''}
+    <button type="button" class="linkbtn" data-act="setAllow" data-v="${ws}">Edit week's money</button>
+  </div>`;
+}
+
+function weekHistory() {
+  const cur = Money.weekStart(U.today());
+  const weeks = Money.weeks().filter(ws => ws < cur);
+  if (!weeks.length) return '';
+  const shown = ui.histAll ? weeks : weeks.slice(0, 6);
+  const saved = weeks.map(Money.week).filter(w => w.a).reduce((a, w) => a + w.left, 0);
+  return `<div class="card history">
+    <div class="row"><h4 class="sub">📅 Week history</h4>
+      <span class="small muted">Left over in total <b class="${U.cls(saved)}">${U.money(saved)}</b></span></div>
+    <div class="histlist">${shown.map(ws => {
+      const w = Money.week(ws);
+      return `<button type="button" class="histrow" data-act="openWeek" data-v="${ws}">
+        <span class="h-main"><span class="h-date">${U.esc(Money.weekLabel(ws))}</span>
+          <span class="h-nums">Money <b>${w.a ? Money.fmtOrig(w.a) : '–'}</b> · Spent <b>${U.money(w.spent, false)}</b></span></span>
+        <span class="h-left ${w.a ? U.cls(w.left) : ''}">${w.a ? U.money(w.left) : '–'}<small>${w.a ? (w.left < 0 ? 'over' : 'left') : 'no money set'}</small></span>
+      </button>`;
+    }).join('')}</div>
+    ${weeks.length > 6 ? `<button type="button" class="btn ghost block" data-act="histAll">${ui.histAll ? 'Show less' : `Show all ${weeks.length} weeks`}</button>` : ''}
+  </div>`;
+}
+
+function viewMoney() {
+  const today = U.today();
+  const todays = Money.list(today, today);
+  const spent = Money.total(todays);
+  const monthFrom = today.slice(0, 8) + '01';
+  const month = Money.total(Money.list(monthFrom, today));
+  const [from, to] = ui.moneyRange === 'week' ? [Money.weekStart(today), today] : rangeDates(ui.moneyRange);
+  const list = Money.list(from, to);
+  const total = Money.total(list);
+  const m = Money.byMethod(list);
+
+  return `<section class="view">
+    ${spendBanner(spent)}
+    ${walletCard(Money.weekStart(today))}
+    <div class="card statrow">
+      <div><span>Spent today</span><b>${U.money(spent, false)}</b></div>
+      <div><span>This month</span><b>${U.money(month, false)}</b></div>
+      <div><span>Avg / day</span><b>${U.money(Money.perDay(month, monthFrom, today), false)}</b></div>
+    </div>
+    <button type="button" class="btn primary block" data-act="addExp">+ Add expense</button>
+
+    ${chips('moneyRange', ui.moneyRange, [['today', 'Today'], ['week', 'This week'], ['month', 'Month'], ['all', 'All']])}
+    <p class="muted small sumline">${list.length} item${list.length === 1 ? '' : 's'} · <b>${U.money(total, false)}</b>
+      ${list.length ? ` · ${METHODS.cash} ${U.money(m.cash, false)} · ${METHODS.aba} ${U.money(m.aba, false)}` : ''}</p>
+    ${catBreakdown(list)}
+    ${list.length ? expGroups(list) : '<p class="empty">No spending in this range.</p>'}
+    ${weekHistory()}
+    <button type="button" class="btn ghost block" data-act="manageCats">✏️ Edit categories</button>
+  </section>`;
+}
+
+// ---------- Week's money ----------
+
+const aw = { ws: null };
+
+function openAllow(ws) {
+  const a = Money.allowance(ws);
+  const last = a || Money.lastAllowance(ws);
+  const f = $('#allowForm');
+  f.reset();
+  aw.ws = ws;
+  $('#allowWeek').textContent = `${Money.weekLabel(ws)}${ws === Money.weekStart(U.today()) ? ' · this week' : ''}`;
+  // A new week starts with last week's amount, ready to confirm.
+  f.amount.value = last ? last.amount : '';
+  f.cur.value = last ? last.cur : lsGet('dt.lastCur', 'USD');
+  $('#delAllow').hidden = !a;
+  allowHint();
+  $('#allowDlg').showModal();
+}
+
+function allowHint() {
+  const f = $('#allowForm');
+  const v = Money.parse(f.amount.value, f.cur.value);
+  let txt = !(v > 0) ? '' : f.cur.value === 'KHR' ? `= ${U.money(v / KHR_PER_USD, false)}` : `= ${Money.fmtKHR(v * KHR_PER_USD)}`;
+  if (!Money.allowance(aw.ws) && v > 0 && Money.lastAllowance(aw.ws)) txt += ' · same as last week, change it if needed';
+  $('#allowHint').textContent = txt;
+}
+
+function saveAllow() {
+  const f = $('#allowForm');
+  const cur = f.cur.value === 'KHR' ? 'KHR' : 'USD';
+  const v = Money.parse(f.amount.value, cur);
+  if (!(v > 0)) return toast('Enter the money you have for this week.');
+  const old = Money.allowance(aw.ws);
+  Store.upsert('allowances', {
+    ...(old || { createdAt: Date.now() }),
+    id: aw.ws,
+    amount: String(cur === 'KHR' ? Math.round(v) : Math.round(v * 100) / 100),
+    cur,
+  });
+  $('#allowDlg').close();
+  toast(old ? "Week's money updated" : "Week's money saved 👛");
+}
+
+// ---------- Week detail ----------
+
+function renderWeek(ws) {
+  const w = Money.week(ws);
+  $('#weekTitle').textContent = `👛 ${Money.weekLabel(ws)}`;
+  $('#weekBody').innerHTML = `
+    <div class="tiles">
+      <div class="tile"><span>Week's money</span><b>${w.a ? Money.fmtOrig(w.a) : '–'}</b>${w.a && w.a.cur === 'KHR' ? `<small>= ${U.money(w.got, false)}</small>` : ''}</div>
+      <div class="tile"><span>Spent</span><b>${U.money(w.spent, false)}</b><small>${w.list.length} item${w.list.length === 1 ? '' : 's'}</small></div>
+      <div class="tile"><span>${w.left < 0 ? 'Over budget' : 'Left over'}</span><b class="${w.a ? U.cls(w.left) : ''}">${w.a ? U.money(Math.abs(w.left), false) : '–'}</b></div>
+      <div class="tile"><span>Avg / day</span><b>${U.money(w.spent / 7, false)}</b></div>
+    </div>
+    <button type="button" class="btn ghost block" data-act="setAllow" data-v="${ws}">${w.a ? "Edit week's money" : "+ Add week's money"}</button>
+    ${catBreakdown(w.list)}
+    ${w.list.length ? expGroups(w.list) : '<p class="empty">No spending this week.</p>'}`;
+}
+
+function openWeek(ws) {
+  ui.weekOpen = ws;
+  renderWeek(ws);
+  $('#weekDlg').showModal();
+}
+
+// ---------- Expense form ----------
+
+const eform = { id: null };
+
+function renderCatPick(sel) {
+  $('#catPick').innerHTML = Money.cats().map(c =>
+    `<label><input type="radio" name="cat" value="${U.esc(c.id)}"${c.id === sel ? ' checked' : ''}><span>${U.esc(c.emoji || '•')} ${U.esc(c.name)}</span></label>`).join('') +
+    '<button type="button" class="catedit" data-act="manageCats">✏️ Edit</button>';
+}
+
+function openExpForm(id, date) {
+  const e = id ? Store.get('expenses', id) : null;
+  const f = $('#expForm');
+  f.reset();
+  eform.id = id || null;
+  $('#expTitle').textContent = e ? 'Edit expense' : 'New expense';
+  f.amount.value = e ? e.amount : '';
+  f.cur.value = e ? e.cur : lsGet('dt.lastCur', 'KHR');
+  renderCatPick(e ? Money.cat(e.cat).id : '');
+  f.method.value = e ? e.method || 'cash' : lsGet('dt.lastMethod', 'cash');
+  f.date.value = e ? e.date : date || U.today();
+  f.time.value = e ? e.time || '' : U.nowTime();
+  f.note.value = e ? e.note || '' : '';
+  $('#delExp').hidden = !e;
+  expHint();
+  $('#expDlg').showModal();
+}
+
+function expHint() {
+  const f = $('#expForm');
+  const v = Money.parse(f.amount.value, f.cur.value);
+  if (!(v > 0)) { $('#expHint').textContent = 'Riel is counted at 4,100៛ = $1.'; return; }
+  const usd = Money.usd({ amount: v, cur: f.cur.value });
+  let txt = f.cur.value === 'KHR' ? `= ${U.money(usd, false)}` : `= ${Money.fmtKHR(v * KHR_PER_USD)}`;
+  const limit = f.date.value ? Money.dailyBudget(f.date.value) : 0;
+  if (limit) {
+    const before = Money.total(Money.list(f.date.value, f.date.value).filter(e => e.id !== eform.id));
+    txt += ` · ${f.date.value === U.today() ? 'today' : 'that day'} will be ${U.money(before + usd, false)} of the ${U.money(limit, false)} daily limit`;
+  }
+  $('#expHint').textContent = txt;
+}
+
+function saveExp() {
+  const f = $('#expForm');
+  const cur = f.cur.value === 'USD' ? 'USD' : 'KHR';
+  const amt = Money.parse(f.amount.value, cur);
+  const cat = ($('#catPick input:checked') || {}).value;
+  if (!(amt > 0)) return toast('Enter how much you spent.');
+  if (!cat) return toast('Pick what it was for.');
+  if (!f.date.value) return toast('Set the date.');
+  const old = eform.id ? Store.get('expenses', eform.id) : null;
+  const date = f.date.value;
+  const before = Money.total(Money.list(date, date).filter(e => e.id !== eform.id));
+  const item = {
+    ...(old || { id: U.uid(), createdAt: Date.now() }),
+    amount: String(cur === 'KHR' ? Math.round(amt) : Math.round(amt * 100) / 100),
+    cur, cat,
+    method: f.method.value === 'aba' ? 'aba' : 'cash',
+    date, time: f.time.value,
+    note: f.note.value.trim(),
+  };
+  Store.upsert('expenses', item);
+  lsSet('dt.lastCur', cur);
+  lsSet('dt.lastMethod', item.method);
+  $('#expDlg').close();
+  toast(old ? 'Expense updated' : `Saved ${U.money(Money.usd(item), false)}`);
+  const limit = Money.dailyBudget(date);
+  const after = before + Money.usd(item);
+  if (limit && date === U.today() && after > limit) {
+    setTimeout(() => toast(`🛑 Over today's limit by ${U.money(after - limit, false)}.`), 2700);
+  }
+}
+
+// ---------- Categories ----------
+
+function renderCats() {
+  $('#catList').innerHTML = Money.cats().map(c => `<li class="catrow">
+    <input data-cat="${U.esc(c.id)}" data-f="emoji" value="${U.esc(c.emoji || '')}" maxlength="4" aria-label="Emoji for ${U.esc(c.name)}">
+    <input data-cat="${U.esc(c.id)}" data-f="name" value="${U.esc(c.name)}" maxlength="30" aria-label="Name">
+    ${c.id === 'other'
+      ? '<span class="catlock" title="Other is always kept">🔒</span>'
+      : `<button type="button" class="icon del" data-act="delCat" data-id="${U.esc(c.id)}" aria-label="Delete ${U.esc(c.name)}">×</button>`}
+  </li>`).join('');
+}
+
+function openCats() {
+  const f = $('#catForm');
+  f.newEmoji.value = '';
+  f.newName.value = '';
+  renderCats();
+  $('#catDlg').showModal();
+}
+
+function renameCat(el) {
+  const c = Money.cats().find(x => x.id === el.dataset.cat);
+  if (!c) return;
+  const v = el.value.trim();
+  if (el.dataset.f === 'name' && !v) { el.value = c.name; return toast('A category needs a name.'); }
+  Store.upsert('categories', { id: c.id, emoji: c.emoji, name: c.name, createdAt: c.createdAt || 0, [el.dataset.f]: v });
+}
+
+function addCat() {
+  const f = $('#catForm');
+  const name = f.newName.value.trim();
+  if (!name) return toast('Type a name for the category.');
+  if (Money.cats().some(c => c.name.toLowerCase() === name.toLowerCase())) return toast(`"${name}" already exists.`);
+  Store.upsert('categories', { id: U.uid(), emoji: f.newEmoji.value.trim() || '🏷️', name, createdAt: Date.now() });
+  f.newEmoji.value = '';
+  f.newName.value = '';
+  renderCats();
+  toast(`Added ${name}`);
+}
+
+function delCat(id) {
+  const c = Money.cats().find(x => x.id === id);
+  if (!c || id === 'other') return;
+  const used = Store.list('expenses').filter(e => e.cat === id);
+  const msg = used.length
+    ? `Delete "${c.name}"? Its ${used.length} expense${used.length === 1 ? '' : 's'} will move to Other.`
+    : `Delete "${c.name}"?`;
+  if (!confirm(msg)) return;
+  for (const e of used) Store.upsert('expenses', { ...e, cat: 'other' });
+  // Built-in categories have no stored item yet, so save a delete marker.
+  Store.upsert('categories', { id, deleted: true });
+  renderCats();
+}
+
 // ---------- Calendar ----------
+
+function moneyMonthStats(first, last, spend) {
+  const today = U.today();
+  const total = Object.values(spend).reduce((a, b) => a + b, 0);
+  // Average over the days of the month so far (all of it for past months).
+  const avg = Money.perDay(total, first, last < today ? last : today);
+  const limit = Money.dailyBudget(today) || Object.keys(spend).some(Money.dailyBudget);
+  const over = Object.entries(spend).filter(([d, v]) => Money.dailyBudget(d) && v > Money.dailyBudget(d)).length;
+  const top = Money.byCat(Money.list(first, last))[0];
+  return `<div class="card statrow">
+      <div><span>Month spent</span><b>${U.money(total, false)}</b></div>
+      <div><span>Avg / day</span><b>${U.money(avg, false)}</b></div>
+      ${limit ? `<div><span>Days over limit</span><b class="${over ? 'neg' : 'pos'}">${over}</b></div>`
+        : `<div><span>Top</span><b class="toptxt">${top ? U.esc(Money.catLabel(top.id)) : '–'}</b></div>`}
+    </div>
+    ${limit ? `<div class="legend"><span><i class="lg-pos"></i>Within daily limit</span><span><i class="lg-neg"></i>Over daily limit</span></div>` : ''}`;
+}
 
 function viewCalendar() {
   const [y, m] = ui.calMonth.split('-').map(Number);
@@ -588,14 +952,20 @@ function viewCalendar() {
   const total = sumPnl(trades);
 
   const tasksMode = ui.calMode === 'tasks';
+  const moneyMode = ui.calMode === 'money';
+  const spend = moneyMode ? Money.byDay(first, last) : {};
   let cells = '';
   for (let i = 0; i < U.weekdayMon(first); i++) cells += '<span class="day blank"></span>';
   for (let d = 1; d <= days; d++) {
     const ds = `${ui.calMonth}-${String(d).padStart(2, '0')}`;
     const b = byDay[ds];
     const pct = b && b.tasks ? b.done / b.tasks * 100 : NaN;
-    const cls = tasksMode ? (b && b.tasks && (ds < today || pct >= 100) ? 'b-' + Perf.band(pct) : '') : b && b.n ? U.cls(b.pnl) : '';
-    const main = tasksMode
+    const sp = spend[ds] || 0;
+    const limit = moneyMode ? Money.dailyBudget(ds) : 0;
+    const cls = moneyMode ? (sp > 0 ? (limit ? (sp > limit ? 'neg' : 'pos') : 'spent') : '')
+      : tasksMode ? (b && b.tasks && (ds < today || pct >= 100) ? 'b-' + Perf.band(pct) : '') : b && b.n ? U.cls(b.pnl) : '';
+    const main = moneyMode ? (sp > 0 ? `<span class="dp">${Money.short(sp)}</span>` : '')
+      : tasksMode
       ? b && b.tasks ? `<span class="dp">${Math.round(pct)}%</span><span class="dt">${b.done}/${b.tasks}</span>` : ''
       : `${b && b.n ? `<span class="dp">${U.moneyShort(b.pnl)}</span>` : ''}${b && b.tasks ? `<span class="dt${b.done === b.tasks ? ' all' : ''}">${b.done}/${b.tasks}</span>` : ''}`;
     cells += `<button type="button" class="day ${cls}${ds === today ? ' today' : ''}${ds === ui.calDay ? ' sel' : ''}" data-act="calDay" data-v="${ds}">
@@ -606,7 +976,15 @@ function viewCalendar() {
 
   const sel = ui.calDay && ui.calDay.startsWith(ui.calMonth) ? ui.calDay : null;
   let detail = '';
-  if (sel) {
+  if (sel && moneyMode) {
+    const ex = Money.list(sel, sel);
+    const t = Money.total(ex);
+    detail = `<div class="card">
+      <h3 class="dayhead"><span>${U.esc(U.dayLabel(sel))}</span>${ex.length ? `<span class="${Money.dailyBudget(sel) && t > Money.dailyBudget(sel) ? 'neg' : ''}">${U.money(t, false)}</span>` : ''}</h3>
+      ${ex.length ? `<div class="explist">${ex.map(expRow).join('')}</div>` : '<p class="muted small">No spending.</p>'}
+      <button type="button" class="btn ghost block addday" data-act="addExp" data-v="${sel}">+ Add expense for this day</button>
+    </div>`;
+  } else if (sel) {
     const st = tradesIn(sel, sel);
     const tk = tasksOn(sel);
     const p = sumPnl(st);
@@ -624,9 +1002,9 @@ function viewCalendar() {
       <span class="datepick"><span>${U.fmtDate(first, { month: 'long', year: 'numeric' })}</span></span>
       <button type="button" class="icon nav" data-act="calShift" data-v="1" aria-label="Next month">›</button>
     </div>
-    ${chips('calMode', ui.calMode, [['pnl', '💵 PnL'], ['tasks', '☑ Activities']])}
-    ${tasksMode ? '' : acctChips()}
-    ${tasksMode ? `<div class="card statrow">
+    ${chips('calMode', ui.calMode, [['pnl', '💵 PnL'], ['tasks', '☑ Activities'], ['money', '💰 Money']])}
+    ${tasksMode || moneyMode ? '' : acctChips()}
+    ${moneyMode ? moneyMonthStats(first, last, spend) : tasksMode ? `<div class="card statrow">
       <div><span>Avg completion</span><b>${isFinite(ms.avg) ? Math.round(ms.avg) + '%' : '–'}</b></div>
       <div><span>Perfect days</span><b class="pos">${ms.perfect}</b></div>
       <div><span>Days 70%+</span><b>${ms.good}/${ms.tracked}</b></div>
@@ -813,7 +1191,32 @@ function reviewHTML(from, to) {
     ${accts.length ? `<h3 class="sub">🏦 Accounts now</h3><ul class="missedlist">${accts.map(a => {
       const x = Acct.stats(a);
       return `<li><span>${U.esc(Acct.label(a))}</span><b>${U.money(x.balance, false)}</b></li>`;
-    }).join('')}</ul>` : ''}`;
+    }).join('')}</ul>` : ''}
+    ${reviewSpending(from)}`;
+}
+
+// Spending weeks run Sunday to Saturday, so use the one that holds `from`
+// (for last week's review that's the most recent finished spending week).
+function reviewSpending(from) {
+  const ws = Money.weekStart(from);
+  const w = Money.week(ws);
+  const list = w.list;
+  if (!list.length && !w.a) return '';
+  const total = w.spent;
+  const cats = Money.byCat(list);
+  const m = Money.byMethod(list);
+  const limit = Money.dailyBudget(ws);
+  const over = limit ? Object.values(Money.byDay(ws, U.addDays(ws, 6))).filter(v => v > limit).length : 0;
+  return `<h3 class="sub spend">💰 Spending</h3>
+    <p class="muted small">${U.esc(Money.weekLabel(ws))}</p>
+    <div class="tiles">
+      ${w.a ? `<div class="tile"><span>${w.left < 0 ? 'Over budget' : 'Left over'}</span><b class="${U.cls(w.left)}">${U.money(Math.abs(w.left), false)}</b><small>of ${Money.fmtOrig(w.a)}</small></div>` : ''}
+      <div class="tile"><span>Spent</span><b>${U.money(total, false)}</b><small>≈ ${Money.fmtKHR(total * KHR_PER_USD)}</small></div>
+      <div class="tile"><span>Avg / day</span><b>${U.money(total / 7, false)}</b>${limit ? `<small>${over} day${over === 1 ? '' : 's'} over limit</small>` : ''}</div>
+      <div class="tile"><span>Cash · ABA</span><b>${U.money(m.cash, false)} · ${U.money(m.aba, false)}</b></div>
+    </div>
+    <ul class="missedlist">${cats.slice(0, 3).map(c =>
+      `<li><span>${U.esc(Money.catLabel(c.id))}</span><b>${U.money(c.usd, false)}</b></li>`).join('')}</ul>`;
 }
 
 function openReview(from, to) {
@@ -828,7 +1231,9 @@ function maybeShowReview() {
   const from = U.addDays(ws, -7), to = U.addDays(ws, -1);
   if (lsGet('dt.reviewSeen', '') === from) { reviewChecked = true; return; }
   const any = Store.list('tasks').some(t => t.date >= from && t.date <= to) ||
-    Store.list('trades').some(t => t.date >= from && t.date <= to);
+    Store.list('trades').some(t => t.date >= from && t.date <= to) ||
+    Store.list('expenses').some(e => e.date >= from && e.date <= to) ||
+    Store.list('allowances').some(a => a.id >= U.addDays(from, -1) && a.id <= to);
   if (!any) return;
   reviewChecked = true;
   lsSet('dt.reviewSeen', from);
@@ -885,7 +1290,7 @@ function renderHeader() {
   pill.title = Store.lastError() || label;
 }
 
-const VIEWS = { plan: viewPlan, trades: viewTrades, calendar: viewCalendar, stats: viewStats };
+const VIEWS = { plan: viewPlan, trades: viewTrades, money: viewMoney, calendar: viewCalendar, stats: viewStats };
 
 function render() {
   if (!VIEWS[ui.tab]) ui.tab = 'plan';
@@ -965,6 +1370,28 @@ const actions = {
     openReview(U.addDays(ws, -7), U.addDays(ws, -1));
   },
   tradePair(el) { ui.tradePair = el.dataset.v; render(); },
+  moneyRange(el) { ui.moneyRange = el.dataset.v; render(); },
+  addExp(el) { openExpForm(null, el.dataset.v); },
+  openExp(el) { openExpForm(el.dataset.id); },
+  delExp() {
+    if (eform.id && confirm('Delete this expense?')) {
+      Store.remove('expenses', eform.id);
+      $('#expDlg').close();
+      toast('Expense deleted');
+    }
+  },
+  manageCats() { openCats(); },
+  setAllow(el) { openAllow(el.dataset.v); },
+  delAllow() {
+    if (!confirm("Remove this week's money?")) return;
+    Store.remove('allowances', aw.ws);
+    $('#allowDlg').close();
+    toast("Week's money removed");
+  },
+  openWeek(el) { openWeek(el.dataset.v); },
+  histAll() { ui.histAll = !ui.histAll; render(); },
+  addCat() { addCat(); },
+  delCat(el) { delCat(el.dataset.id); },
   addTrade() { openTradeForm(null); },
   openTrade(el) { openTradeForm(el.dataset.id); },
   calShift(el) {
@@ -1062,6 +1489,12 @@ document.addEventListener('change', async e => {
     const v = U.num(el.value);
     pv[el.name.slice(3)] = v > 0 ? v : PAIRS[el.name.slice(3)].value;
     Store.setSettings({ pointValue: pv });
+  } else if (el.dataset.cat) {
+    renameCat(el);
+  } else if (el.closest('#expForm')) {
+    expHint();
+  } else if (el.closest('#allowForm')) {
+    allowHint();
   } else if (el.name === 'lossLimit') {
     const v = U.num(el.value);
     Store.setSettings({ lossLimit: v > 0 ? v : 0 });
@@ -1076,6 +1509,8 @@ document.addEventListener('input', e => {
   if (e.target.name === 'pnl') form.pnlTouched = e.target.value.trim() !== '';
   if (e.target.closest('#tradeForm')) updatePreview();
   else if (e.target.closest('#acctForm')) acctFormType();
+  else if (e.target.closest('#expForm')) expHint();
+  else if (e.target.closest('#allowForm')) allowHint();
 });
 
 document.addEventListener('submit', e => {
@@ -1093,9 +1528,28 @@ document.addEventListener('submit', e => {
   } else if (e.target.id === 'acctForm') {
     e.preventDefault();
     saveAcct();
-  } else if (e.target.id === 'settingsForm') {
+  } else if (e.target.id === 'expForm') {
+    e.preventDefault();
+    saveExp();
+  } else if (e.target.id === 'allowForm') {
+    e.preventDefault();
+    saveAllow();
+  } else if (e.target.id === 'catForm' || e.target.id === 'settingsForm') {
     e.preventDefault();
   }
+});
+
+// Enter in the "new category" boxes adds it; in a rename box it saves the field.
+$('#catForm').addEventListener('keydown', e => {
+  if (e.key !== 'Enter' || e.target.tagName !== 'INPUT') return;
+  e.preventDefault();
+  if (e.target.name === 'newName' || e.target.name === 'newEmoji') addCat();
+  else e.target.blur();
+});
+
+// Categories edited from inside the expense form show up there right away.
+$('#catDlg').addEventListener('close', () => {
+  if ($('#expDlg').open) renderCatPick(($('#catPick input:checked') || {}).value);
 });
 
 // Tap outside a dialog closes it.
@@ -1107,6 +1561,7 @@ Store.on(() => {
   // Don't rebuild the page under an open trade form; just refresh the header.
   if ($('#tradeDlg').open) renderHeader(); else render();
   if ($('#settingsDlg').open) renderSyncInfo();
+  if ($('#weekDlg').open) renderWeek(ui.weekOpen);
 });
 
 document.addEventListener('visibilitychange', () => {
