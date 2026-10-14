@@ -15,6 +15,8 @@
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="stylesheet" href="css/app.css">
   <link rel="stylesheet" href="css/colors.css">
+  <link rel="stylesheet" href="css/features.css">
+  <link rel="stylesheet" href="css/features-color.css">
 </head>
 <body>
   <header class="topbar">
@@ -54,6 +56,9 @@
         <button type="button" class="icon" data-act="closeDlg" aria-label="Close">×</button>
       </div>
 
+      <label class="field"><span>Account</span><select name="account"></select></label>
+      <p id="noAcctHint" class="pnlhint" hidden>You need an account first. Close this, then tap <b>+ Add account</b> on the Trades tab.</p>
+
       <div class="seg three" role="radiogroup" aria-label="Pair">
         <label><input type="radio" name="pair" value="NAS100"><span>NAS100</span></label>
         <label><input type="radio" name="pair" value="XAUUSD"><span>XAUUSD</span></label>
@@ -91,6 +96,98 @@
         <button type="submit" class="btn primary grow">Save trade</button>
       </div>
     </form>
+  </dialog>
+
+  <!-- Account form -->
+  <dialog id="acctDlg" class="sheet">
+    <form id="acctForm" autocomplete="off" novalidate>
+      <div class="sheethead">
+        <h2 id="acctTitle" tabindex="-1" autofocus>New account</h2>
+        <button type="button" class="icon" data-act="closeDlg" aria-label="Close">×</button>
+      </div>
+
+      <div class="seg two acctype" role="radiogroup" aria-label="Account type">
+        <label class="funded"><input type="radio" name="atype" value="funded"><span>🏆 Funded</span></label>
+        <label class="live"><input type="radio" name="atype" value="live"><span>💵 Live</span></label>
+      </div>
+      <div class="grid2">
+        <label class="field"><span>Account name</span><input name="aname" maxlength="40" placeholder="e.g. FTMO 10k"></label>
+        <label class="field"><span id="firmLabel">Prop firm</span><input name="firm" maxlength="40"></label>
+      </div>
+      <label class="field"><span>Starting balance ($)</span><input name="start" inputmode="decimal" placeholder="10000"></label>
+
+      <div id="fundedBox" class="subbox">
+        <div class="rule">
+          <label class="field"><span>Max daily loss</span><input name="dlV" inputmode="decimal" placeholder="5"></label>
+          <div class="seg two unit" role="radiogroup" aria-label="Daily loss unit">
+            <label><input type="radio" name="dlU" value="%"><span>%</span></label>
+            <label><input type="radio" name="dlU" value="$"><span>$</span></label>
+          </div>
+          <small id="dlHint" class="rulehint"></small>
+        </div>
+        <div class="rule">
+          <label class="field"><span>Max loss (fail line)</span><input name="mlV" inputmode="decimal" placeholder="10"></label>
+          <div class="seg two unit" role="radiogroup" aria-label="Max loss unit">
+            <label><input type="radio" name="mlU" value="%"><span>%</span></label>
+            <label><input type="radio" name="mlU" value="$"><span>$</span></label>
+          </div>
+          <small id="mlHint" class="rulehint"></small>
+        </div>
+        <div class="rule">
+          <label class="field"><span>Profit target (optional)</span><input name="tgV" inputmode="decimal" placeholder="10"></label>
+          <div class="seg two unit" role="radiogroup" aria-label="Profit target unit">
+            <label><input type="radio" name="tgU" value="%"><span>%</span></label>
+            <label><input type="radio" name="tgU" value="$"><span>$</span></label>
+          </div>
+          <small id="tgHint" class="rulehint"></small>
+        </div>
+        <div class="field"><span>Drawdown type</span>
+          <div class="seg three" role="radiogroup" aria-label="Drawdown type">
+            <label><input type="radio" name="dd" value="static"><span>Static</span></label>
+            <label><input type="radio" name="dd" value="trailing"><span>Trailing</span></label>
+            <label><input type="radio" name="dd" value="eod"><span>EOD</span></label>
+          </div>
+        </div>
+        <label class="checkrow" id="lockRow"><input type="checkbox" name="lock"> Stop trailing at starting balance</label>
+        <p class="muted small">% values are of the starting balance. The trading day resets at the MT5 server close (5 PM New York, about 4–5 AM Cambodia).</p>
+      </div>
+
+      <div id="liveBox" class="subbox" hidden>
+        <div class="field"><span>Deposits &amp; withdrawals</span></div>
+        <div class="flowrow">
+          <input type="date" name="flowDate" aria-label="Date">
+          <select name="flowKind" aria-label="Type"><option value="in">Deposit</option><option value="out">Withdraw</option></select>
+          <input name="flowAmt" inputmode="decimal" placeholder="$" aria-label="Amount">
+          <button type="button" class="btn primary" data-act="addFlow">Add</button>
+        </div>
+        <ul id="flowList" class="flowlist"></ul>
+      </div>
+
+      <div class="field"><span>Status</span>
+        <div class="seg three status" role="radiogroup" aria-label="Status">
+          <label class="active"><input type="radio" name="status" value="active"><span>Active</span></label>
+          <label class="passed"><input type="radio" name="status" value="passed"><span>Passed</span></label>
+          <label class="failed"><input type="radio" name="status" value="failed"><span>Failed</span></label>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button type="button" id="delAcct" class="btn danger" data-act="delAcct" hidden>Delete</button>
+        <button type="submit" class="btn primary grow">Save account</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Weekly review -->
+  <dialog id="reviewDlg" class="sheet">
+    <div class="sheetbody">
+      <div class="sheethead">
+        <h2 tabindex="-1" autofocus>📋 Last week's review</h2>
+        <button type="button" class="icon" data-act="closeDlg" aria-label="Close">×</button>
+      </div>
+      <div id="reviewBody"></div>
+      <button type="button" class="btn primary block" data-act="closeDlg">Let's go this week 💪</button>
+    </div>
   </dialog>
 
   <!-- Screenshot viewer -->
@@ -163,6 +260,8 @@
 
   <script src="js/util.js"></script>
   <script src="js/store.js"></script>
+  <script src="js/accounts.js"></script>
+  <script src="js/perf.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

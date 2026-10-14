@@ -1,12 +1,16 @@
 // Network first so updates show up right away; the cache is only used offline.
-const CACHE = 'daily-tracking-v4';
+const CACHE = 'daily-tracking-v6';
 const SHELL = [
   './',
   'index.html',
   'css/app.css',
   'css/colors.css',
+  'css/features.css',
+  'css/features-color.css',
   'js/util.js',
   'js/store.js',
+  'js/accounts.js',
+  'js/perf.js',
   'js/app.js',
   'manifest.webmanifest',
   'icons/icon.svg',

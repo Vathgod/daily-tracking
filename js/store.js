@@ -38,6 +38,7 @@ const Store = (() => {
   const LS_STATE = 'dt.state';
   const LS_CFG = 'dt.config';
   const DATA_PATH = 'data.json';
+  const KINDS = ['tasks', 'trades', 'accounts'];
 
   let state = blank();
   const cfg = { owner: 'Vathgod', repo: 'daily-tracking-data', token: '' };
@@ -50,7 +51,7 @@ const Store = (() => {
   const shotUrls = new Map();
 
   function blank() {
-    return { tasks: {}, trades: {}, settings: { lossLimit: 0, updatedAt: 0 } };
+    return { tasks: {}, trades: {}, accounts: {}, settings: { lossLimit: 0, updatedAt: 0 } };
   }
 
   function normalize(o) {
@@ -63,6 +64,7 @@ const Store = (() => {
     if (o) {
       put(s.tasks, o.tasks);
       put(s.trades, o.trades);
+      put(s.accounts, o.accounts);
       if (o.settings) s.settings = { ...s.settings, ...o.settings };
     }
     return s;
@@ -75,12 +77,13 @@ const Store = (() => {
       settings: s.settings,
       tasks: Object.values(s.tasks).sort(byDate),
       trades: Object.values(s.trades).sort(byDate),
+      accounts: Object.values(s.accounts).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)),
     };
   }
 
   function merge(a, b) {
     const s = blank();
-    for (const k of ['tasks', 'trades']) {
+    for (const k of KINDS) {
       const ids = new Set([...Object.keys(a[k]), ...Object.keys(b[k])]);
       for (const id of ids) {
         const x = a[k][id], y = b[k][id];
@@ -94,7 +97,7 @@ const Store = (() => {
   // Cheap fingerprint: which items exist and when each was last changed.
   function sig(s) {
     const part = m => Object.keys(m).sort().map(id => id + ':' + (m[id].updatedAt || 0)).join(',');
-    return part(s.tasks) + '|' + part(s.trades) + '|' + (s.settings.updatedAt || 0);
+    return KINDS.map(k => part(s[k])).join('|') + '|' + (s.settings.updatedAt || 0);
   }
 
   function load() {
@@ -382,7 +385,7 @@ const Store = (() => {
 
   function importJSON(text) {
     const incoming = normalize(JSON.parse(text));
-    const n = Object.keys(incoming.tasks).length + Object.keys(incoming.trades).length;
+    const n = KINDS.reduce((sum, k) => sum + Object.keys(incoming[k]).length, 0);
     state = merge(state, incoming);
     persist();
     emit();

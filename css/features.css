@@ -1,0 +1,135 @@
+/* Accounts, activity performance and weekly review. */
+:root {
+  --b-perfect: #16a34a; --b-good: #2563eb; --b-ok: #d97706; --b-bad: #e11d48; --b-none: var(--surface-2);
+  --c-funded: #c98a00; --c-live: #0891b2;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --c-funded: #fbbf24; --c-live: #22d3ee;
+  }
+}
+:root[data-theme="dark"] {
+  --c-funded: #fbbf24; --c-live: #22d3ee;
+}
+
+/* ---------- Account cards ---------- */
+.acctlist { display: grid; gap: 8px; }
+.acct { width: 100%; text-align: left; display: grid; gap: 6px; border-left: 4px solid var(--c-live); }
+.acct.funded { border-left-color: var(--c-funded); }
+.acct.s-failed { opacity: .85; border-left-color: var(--neg); }
+.acct.s-passed { border-left-color: var(--pos); }
+.ac-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ac-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ac-type { font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; padding: 2px 7px; border-radius: 6px; }
+.ac-type.funded { color: var(--c-funded); background: color-mix(in srgb, var(--c-funded) 16%, transparent); }
+.ac-type.live { color: var(--c-live); background: color-mix(in srgb, var(--c-live) 16%, transparent); }
+.st { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+.st-active { color: var(--blue); background: color-mix(in srgb, var(--blue) 16%, transparent); }
+.st-passed { color: var(--pos); background: var(--pos-bg); }
+.st-failed { color: var(--neg); background: var(--neg-bg); }
+.ac-bal { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.ac-money { font-size: 24px; font-weight: 800; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+.acct.full .ac-money { font-size: 30px; }
+.ac-line b { color: var(--text); font-weight: 700; }
+.ac-line b.pos { color: var(--pos); }
+.ac-line b.neg { color: var(--neg); }
+.ac-rules { margin: 0; }
+.ac-live { border: 0; padding: 0; margin: 4px 0; }
+.empty-acct { display: grid; gap: 8px; text-align: center; border: 1px dashed color-mix(in srgb, var(--violet) 50%, var(--border)); }
+.empty-acct p { margin: 0; }
+.banner.green { background: var(--pos-bg); color: var(--pos); }
+.acct .banner { margin: 2px 0; font-size: 14px; }
+
+.meter { display: grid; gap: 0; }
+.meter .row { gap: 10px; }
+.meter .row span:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+.meter .bar { margin-top: 5px; }
+.meter .bar i { background: var(--blue); }
+.meter.warn .bar i { background: var(--amber); }
+.meter.hit .bar i { background: var(--neg); }
+.meter.goal .bar i { background: linear-gradient(90deg, #22c55e, #10b981); }
+
+/* ---------- Account form ---------- */
+.acctype .funded input:checked + span { background: var(--c-funded); color: #1a1300; }
+.acctype .live input:checked + span { background: var(--c-live); color: #00222a; }
+.status .active input:checked + span { background: var(--blue); color: #fff; }
+.status .passed input:checked + span { background: var(--pos); color: #fff; }
+.status .failed input:checked + span { background: var(--neg); color: #fff; }
+.subbox { display: grid; gap: 12px; padding: 12px; border-radius: 12px; background: color-mix(in srgb, var(--surface-2) 55%, transparent); border: 1px solid var(--border); }
+.subbox[hidden] { display: none; }
+.subbox p { margin: 0; }
+.rule { display: grid; grid-template-columns: 1fr 92px; gap: 4px 8px; align-items: end; }
+.rule .unit { padding: 3px; }
+.rule .unit span { padding: 7px 0; }
+.rulehint { grid-column: 1 / -1; font-size: 12px; color: var(--muted); min-height: 0; }
+.rulehint:empty { display: none; }
+.checkrow { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+.checkrow[hidden] { display: none; }
+.checkrow input { width: 20px; height: 20px; accent-color: var(--violet); }
+.field select {
+  width: 100%; border: 1px solid var(--border); background: var(--surface-2);
+  border-radius: 10px; padding: 10px; min-height: 42px;
+}
+.flowrow { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.flowrow input, .flowrow select {
+  min-width: 0; border: 1px solid var(--border); background: var(--surface-2); border-radius: 10px; padding: 8px 6px;
+}
+.flowrow .btn { padding: 8px 12px; }
+.flowlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.flowlist li { display: grid; grid-template-columns: 1fr auto auto auto; gap: 8px; align-items: center; font-size: 13px; }
+.flowlist li.muted { display: block; }
+
+/* ---------- Completion bands ---------- */
+.band { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 999px; }
+.band.b-perfect { color: var(--b-perfect); background: color-mix(in srgb, var(--b-perfect) 16%, transparent); }
+.band.b-good { color: var(--b-good); background: color-mix(in srgb, var(--b-good) 16%, transparent); }
+.band.b-ok { color: var(--b-ok); background: color-mix(in srgb, var(--b-ok) 16%, transparent); }
+.band.b-bad { color: var(--b-bad); background: color-mix(in srgb, var(--b-bad) 16%, transparent); }
+
+.weekline {
+  width: 100%; margin-top: 10px; display: flex; justify-content: space-between; gap: 8px;
+  border: 0; border-radius: 10px; padding: 8px 10px; font-size: 13px; color: var(--muted);
+  background: color-mix(in srgb, var(--violet) 12%, var(--surface-2));
+}
+.weekline b { color: var(--text); }
+
+/* Calendar in Activities mode */
+.day.b-perfect { background: color-mix(in srgb, var(--b-perfect) 32%, var(--surface)); border-color: transparent; }
+.day.b-good { background: color-mix(in srgb, var(--b-good) 26%, var(--surface)); border-color: transparent; }
+.day.b-ok { background: color-mix(in srgb, var(--b-ok) 26%, var(--surface)); border-color: transparent; }
+.day.b-bad { background: color-mix(in srgb, var(--b-bad) 28%, var(--surface)); border-color: transparent; }
+.day[class*="b-"] .dp { color: var(--text); }
+
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--muted); margin-top: 10px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 10px; height: 10px; border-radius: 3px; }
+.legend i.b-perfect, .bars i.b-perfect { background: var(--b-perfect); }
+.legend i.b-good, .bars i.b-good { background: var(--b-good); }
+.legend i.b-ok, .bars i.b-ok { background: var(--b-ok); }
+.legend i.b-bad, .bars i.b-bad { background: var(--b-bad); }
+.bars i.b-live { background: color-mix(in srgb, var(--violet) 70%, transparent); }
+
+/* ---------- Daily completion bars ---------- */
+.bars { display: flex; align-items: stretch; gap: 2px; height: 150px; }
+.bcol {
+  flex: 1; min-width: 0; display: grid; grid-template-rows: 16px 1fr 16px; gap: 2px;
+  border: 0; background: none; padding: 0; color: var(--muted);
+}
+.btrack { position: relative; display: block; border-bottom: 1px solid var(--border); }
+.btrack i { position: absolute; left: 12%; right: 12%; bottom: 0; border-radius: 4px 4px 0 0; }
+.bars:not(.few) .btrack i { left: 0; right: 0; border-radius: 2px 2px 0 0; }
+.btrack i.today { outline: 2px solid var(--violet); outline-offset: 1px; }
+.bl { font-size: 10px; font-weight: 700; color: var(--text); text-align: center; align-self: end; }
+.bx { font-size: 10px; text-align: center; white-space: nowrap; }
+.bx.now { color: var(--violet); font-weight: 700; }
+.bcol:hover .btrack, .bcol:focus-visible .btrack { background: color-mix(in srgb, var(--text) 6%, transparent); }
+
+.insights p { margin: 0 0 6px; }
+.missedlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.missedlist li { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; }
+
+/* ---------- Weekly review ---------- */
+.sheetbody { padding: 14px 16px calc(18px + env(safe-area-inset-bottom)); display: grid; gap: 12px; }
+#reviewBody { display: grid; gap: 10px; }
+#reviewBody p { margin: 0; }
+#reviewBody .sub { margin: 4px 0 0; }
