@@ -1,5 +1,5 @@
 // Network first so updates show up right away; the cache is only used offline.
-const CACHE = 'daily-tracking-v9';
+const CACHE = 'daily-tracking-v10';
 const SHELL = [
   './',
   'index.html',
@@ -37,7 +37,9 @@ self.addEventListener('fetch', e => {
   // Never touch GitHub API calls or anything not from this site.
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
   e.respondWith(
-    fetch(e.request)
+    // 'no-cache' asks the server whether a file changed (cheap when it hasn't),
+    // so a new version shows up on the next open instead of up to 10 min later.
+    fetch(e.request, { cache: 'no-cache' })
       .then(res => {
         if (res.ok) {
           const copy = res.clone();
