@@ -63,11 +63,8 @@
       <label class="field"><span>Account</span><select name="account"></select></label>
       <p id="noAcctHint" class="pnlhint" hidden>You need an account first. Close this, then tap <b>+ Add account</b> on the Trades tab.</p>
 
-      <div class="seg three" role="radiogroup" aria-label="Pair">
-        <label><input type="radio" name="pair" value="NAS100"><span>NAS100</span></label>
-        <label><input type="radio" name="pair" value="XAUUSD"><span>XAUUSD</span></label>
-        <label><input type="radio" name="pair" value="EURUSD"><span>EURUSD</span></label>
-      </div>
+      <div id="pairPick" class="seg pairpick" role="radiogroup" aria-label="Pair"></div>
+      <button type="button" class="linkbtn pairlink" data-act="managePairs">✏️ Add or edit pairs</button>
       <div class="seg two side" role="radiogroup" aria-label="Side">
         <label class="buy"><input type="radio" name="side" value="Buy"><span>Buy</span></label>
         <label class="sell"><input type="radio" name="side" value="Sell"><span>Sell</span></label>
@@ -255,6 +252,38 @@
     </div>
   </dialog>
 
+  <!-- Pairs -->
+  <dialog id="pairDlg" class="sheet">
+    <form id="pairForm" autocomplete="off" novalidate>
+      <div class="sheethead">
+        <h2 tabindex="-1" autofocus>Pairs</h2>
+        <button type="button" class="icon" data-act="closeDlg" aria-label="Close">×</button>
+      </div>
+      <p class="muted small"><b>$ / unit</b> = $ value of 1 point (or pip) for <b>1.00 lot</b>. Check your broker's contract size. Tap a field to change it.</p>
+      <div class="pairhead small muted"><span></span><span>Name</span><span>Unit</span><span>$ / unit</span><span></span></div>
+      <ul id="pairList" class="pairlist"></ul>
+      <div class="pairrow add">
+        <span class="pdot" aria-hidden="true"></span>
+        <input name="newName" maxlength="12" placeholder="e.g. GBPUSD" autocapitalize="characters" aria-label="Pair name">
+        <select name="newUnit" aria-label="Unit"><option value="pts">Points</option><option value="pips">Pips</option></select>
+        <input name="newValue" inputmode="decimal" placeholder="$" aria-label="$ per point for 1 lot">
+        <button type="button" class="btn primary" data-act="addPair">Add</button>
+      </div>
+      <div id="hiddenPairs"></div>
+      <details class="help">
+        <summary>How to find the $ per point</summary>
+        <ol>
+          <li>1 point here = a move of 1.0 in price (NAS100 18500 → 18501, gold 2400 → 2401). For forex, 1 pip = 0.0001 (0.01 for JPY pairs).</li>
+          <li>In MT5: Market Watch → right-click the pair → <b>Specification</b> → <b>Contract size</b>.</li>
+          <li>$ per point = contract size × 1.0. Gold 100 → <b>$100</b>. NAS100 1 → <b>$1</b> (some brokers use 10 or 20). Forex 100,000 × 0.0001 → <b>$10</b> per pip.</li>
+          <li>Check with a closed trade: profit ÷ (points × lot) should give the same number.</li>
+          <li>Pairs not ending in USD (e.g. GBPJPY) change with the rate: use an average, or type the exact PnL from MT5 in the trade form.</li>
+        </ol>
+      </details>
+      <p class="muted small">Stopped trading a pair? Tap 🙈 to hide it. Its old trades stay in your history and stats. Pairs with no trades can be deleted with ×.</p>
+    </form>
+  </dialog>
+
   <!-- Categories -->
   <dialog id="catDlg" class="sheet">
     <form id="catForm" autocomplete="off" novalidate>
@@ -300,12 +329,8 @@
 
       <h3 class="sub">Trading</h3>
       <label class="field"><span>Daily loss limit ($)</span><input name="lossLimit" inputmode="decimal" placeholder="e.g. 100 (empty = off)"></label>
-      <p class="muted small">$ value of 1 point for <b>1.00 lot</b>. Used to calculate PnL from points × lot. Check your broker's contract size.</p>
-      <div class="grid3">
-        <label class="field"><span>NAS100 ($/pt)</span><input name="pv_NAS100" inputmode="decimal"></label>
-        <label class="field"><span>XAUUSD ($/pt)</span><input name="pv_XAUUSD" inputmode="decimal"></label>
-        <label class="field"><span>EURUSD ($/pip)</span><input name="pv_EURUSD" inputmode="decimal"></label>
-      </div>
+      <p class="muted small">Add the pairs you trade and their $ value per point for <b>1.00 lot</b> (used to calculate PnL).</p>
+      <button type="button" class="btn ghost block" data-act="managePairs">📈 Pairs &amp; $ per point</button>
 
       <h3 class="sub">GitHub sync</h3>
       <p class="muted small">Saves your data to your <b>private</b> repo so it's safe and the same on every device.</p>
@@ -354,6 +379,7 @@
 
   <script src="js/util.js"></script>
   <script src="js/store.js"></script>
+  <script src="js/pairs.js"></script>
   <script src="js/accounts.js"></script>
   <script src="js/perf.js"></script>
   <script src="js/money.js"></script>

@@ -3,8 +3,9 @@
 // All dates and times in the app are Cambodia time (UTC+7, no daylight saving).
 const TZ = 'Asia/Phnom_Penh';
 
+// Built-in pairs. Your own list (names, units, $ per point) lives in Pairs;
+// mult is still needed to read old trades that stored prices.
 const PAIRS = {
-  // value = default $ per point (or pip) for 1.00 lot; editable in Settings.
   NAS100: { unit: 'pts', mult: 1, dp: 1, value: 1 },
   XAUUSD: { unit: 'pts', mult: 1, dp: 2, value: 100 },
   EURUSD: { unit: 'pips', mult: 10000, dp: 1, value: 10 },
@@ -96,7 +97,7 @@ const U = {
   },
 
   calc(t) {
-    const P = PAIRS[t.pair] || PAIRS.NAS100;
+    const P = PAIRS[t.pair] || { unit: 'pts', mult: 1 };
     const pnl = U.num(t.pnl);
     let move = U.num(t.points);
     let risk = U.num(t.slPts);
@@ -109,7 +110,7 @@ const U = {
     }
     const rr = isFinite(move) && risk > 0 ? move / risk : NaN;
     const result = t.result || (!isFinite(pnl) ? '' : pnl > 0 ? 'Win' : pnl < 0 ? 'Loss' : 'BE');
-    return { move, risk, unit: P.unit, rr, result, session: U.session(t.date, t.time) };
+    return { move, risk, unit: Pairs.unit(t.pair), rr, result, session: U.session(t.date, t.time) };
   },
 
   money(n, signed = true) {

@@ -209,3 +209,24 @@
 .h-left small { font-size: 11px; font-weight: 600; color: var(--muted); }
 .weekbody { display: grid; gap: 10px; }
 .weekbody .dayhead { margin-top: 6px; }
+
+/* ---------- Pairs ---------- */
+.pairpick { grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); }
+.pairpick .nopair { margin: 6px; grid-column: 1 / -1; }
+.pairlink { justify-self: start; margin-top: -6px; }
+.pairlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.pairhead, .pairrow { display: grid; grid-template-columns: 12px minmax(0, 1fr) 84px 58px 40px; gap: 6px; align-items: center; }
+.pairhead { margin-bottom: -6px; font-weight: 600; font-size: 11px; }
+.pairrow input, .pairrow select {
+  min-width: 0; width: 100%; border: 1px solid var(--border); background: var(--surface-2); border-radius: 10px; padding: 9px 8px;
+}
+.pairrow input[data-f="name"], .pairrow input[name="newName"] { font-weight: 700; text-transform: uppercase; }
+.pairrow.add { grid-template-columns: 12px minmax(0, 1fr) 84px 58px auto; margin-top: 2px; }
+.pairrow.add .btn { padding: 9px 12px; }
+.pairrow.add .pdot { background: var(--border); }
+.pairrow.hid { opacity: .7; grid-template-columns: 12px minmax(0, 1fr) 84px 58px auto; }
+.pairrow.hid .mini { padding: 6px 8px; }
+.pdot { width: 12px; height: 12px; border-radius: 50%; background: var(--pc, var(--c-off)); }
+.pact { font-size: 18px; }
+#hiddenPairs .sub { margin: 4px 0 6px; }
+.pairrow select { padding: 9px 2px 9px 6px; font-size: 14px; }

@@ -236,13 +236,132 @@ function acctSection() {
     <button type="button" class="btn ghost block" data-act="newAcct">+ Add account</button>`;
 }
 
+// ---------- Pairs ----------
+
+function pairRow(p) {
+  const n = Pairs.trades(p.name).length;
+  const act = p.hidden
+    ? `<button type="button" class="mini" data-act="showPair" data-id="${U.esc(p.id)}">Show again</button>`
+    : n
+      ? `<button type="button" class="icon pact" data-act="hidePair" data-id="${U.esc(p.id)}" aria-label="Hide ${U.esc(p.name)}" title="Stopped trading it: hide (keeps ${n} trade${n === 1 ? '' : 's'})">🙈</button>`
+      : `<button type="button" class="icon del pact" data-act="delPair" data-id="${U.esc(p.id)}" aria-label="Delete ${U.esc(p.name)}">×</button>`;
+  return `<li class="pairrow${p.hidden ? ' hid' : ''}">
+    <span class="pdot" style="${Pairs.style(p.name)}" aria-hidden="true"></span>
+    <input data-pair="${U.esc(p.id)}" data-f="name" value="${U.esc(p.name)}" maxlength="12" autocapitalize="characters" aria-label="Name">
+    <select data-pair="${U.esc(p.id)}" data-f="unit" aria-label="Unit for ${U.esc(p.name)}">
+      <option value="pts"${p.unit === 'pips' ? '' : ' selected'}>Points</option><option value="pips"${p.unit === 'pips' ? ' selected' : ''}>Pips</option></select>
+    <input data-pair="${U.esc(p.id)}" data-f="value" value="${U.esc(p.value || '')}" inputmode="decimal" placeholder="$" aria-label="$ per ${p.unit === 'pips' ? 'pip' : 'point'} for ${U.esc(p.name)}">
+    ${act}
+  </li>`;
+}
+
+function renderPairs() {
+  const all = Pairs.all();
+  const hidden = all.filter(p => p.hidden);
+  $('#pairList').innerHTML = all.filter(p => !p.hidden).map(pairRow).join('') ||
+    '<li class="muted small">No pairs yet. Add one below.</li>';
+  $('#hiddenPairs').innerHTML = hidden.length
+    ? `<h3 class="sub">Stopped trading</h3><ul class="pairlist">${hidden.map(pairRow).join('')}</ul>` : '';
+}
+
+function openPairs() {
+  const f = $('#pairForm');
+  f.newName.value = '';
+  f.newUnit.value = 'pts';
+  f.newValue.value = '';
+  renderPairs();
+  $('#pairDlg').showModal();
+}
+
+function cleanPairName(v) { return String(v || '').trim().toUpperCase().replace(/\s+/g, ''); }
+
+function savePair(p, patch) {
+  const { id, name, unit, value, color, hidden, createdAt } = { ...p, ...patch };
+  Store.upsert('pairs', { id, name, unit, value: String(value || ''), color, hidden: !!hidden, createdAt: createdAt || 0 });
+}
+
+function editPair(el) {
+  const p = Pairs.all().find(x => x.id === el.dataset.pair);
+  if (!p) return;
+  const f = el.dataset.f;
+  if (f === 'name') {
+    const name = cleanPairName(el.value);
+    if (!name) { el.value = p.name; return toast('A pair needs a name.'); }
+    if (name === p.name) { el.value = name; return; }
+    if (Pairs.get(name)) { el.value = p.name; return toast(`${name} already exists.`); }
+    // Trades keep the pair's name, so move them to the new one.
+    for (const t of Pairs.trades(p.name)) Store.upsert('trades', { ...t, pair: name });
+    if (lsGet('dt.lastPair', '') === p.name) lsSet('dt.lastPair', name);
+    if (ui.tradePair === p.name) ui.tradePair = name;
+    const picked = formPair() === p.name;
+    savePair(p, { name });
+    if (picked && $('#tradeDlg').open) renderPairPick(name);
+    el.value = name;
+  } else if (f === 'unit') {
+    savePair(p, { unit: el.value === 'pips' ? 'pips' : 'pts' });
+  } else if (f === 'value') {
+    const v = U.num(el.value);
+    if (!(v > 0)) { el.value = p.value || ''; return toast('Enter the $ value per point for 1.00 lot.'); }
+    savePair(p, { value: String(v) });
+  }
+}
+
+function addPair() {
+  const f = $('#pairForm');
+  const name = cleanPairName(f.newName.value);
+  const v = U.num(f.newValue.value);
+  if (!name) return toast('Type the pair name, e.g. GBPUSD.');
+  if (Pairs.get(name)) return toast(`${name} already exists.`);
+  if (!(v > 0)) return toast('Enter the $ value per point for 1.00 lot.');
+  savePair({ id: U.uid(), color: Pairs.nextColor(), createdAt: Date.now() },
+    { name, unit: f.newUnit.value === 'pips' ? 'pips' : 'pts', value: String(v) });
+  f.newName.value = '';
+  f.newValue.value = '';
+  renderPairs();
+  toast(`Added ${name}`);
+}
+
+function setPairHidden(id, hidden) {
+  const p = Pairs.all().find(x => x.id === id);
+  if (!p) return;
+  savePair(p, { hidden });
+  if (hidden && ui.tradePair === p.name) ui.tradePair = 'all';
+  renderPairs();
+  toast(hidden ? `${p.name} hidden. Its trades are kept.` : `${p.name} is back`);
+}
+
+function delPair(id) {
+  const p = Pairs.all().find(x => x.id === id);
+  if (!p) return;
+  if (Pairs.trades(p.name).length) return setPairHidden(id, true);
+  if (!confirm(`Delete ${p.name}?`)) return;
+  // Built-in pairs have no stored item yet, so save a delete marker.
+  Store.upsert('pairs', { id, deleted: true });
+  if (ui.tradePair === p.name) ui.tradePair = 'all';
+  renderPairs();
+}
+
+// Pair buttons in the trade form: pairs you trade, plus the edited trade's
+// own pair if it's hidden now.
+function renderPairPick(sel) {
+  const list = Pairs.active();
+  const own = form.id && Store.get('trades', form.id) ? Store.get('trades', form.id).pair : '';
+  if (own && !list.some(p => p.name === own) && Pairs.get(own)) list.push(Pairs.get(own));
+  if (!list.some(p => p.name === sel)) sel = list[0] ? list[0].name : '';
+  $('#pairPick').innerHTML = list.length
+    ? list.map(p => `<label style="${Pairs.style(p.name)}"><input type="radio" name="pair" value="${U.esc(p.name)}"${p.name === sel ? ' checked' : ''}><span>${U.esc(p.name)}</span></label>`).join('')
+    : '<p class="muted small nopair">No pairs yet. Tap “Add or edit pairs”.</p>';
+}
+
+function formPair() { return ($('#pairPick input:checked') || {}).value || ''; }
+
 // ---------- Trades ----------
 
 function tradeCard(t) {
   const c = U.calc(t);
   const pnl = U.num(t.pnl);
   const meta = [U.fmtMove(c.move, c.unit), U.fmtRR(c.rr)].filter(Boolean).join(' · ');
-  return `<button type="button" class="trade p-${U.esc(t.pair)}" data-act="openTrade" data-id="${t.id}">
+  return `<button type="button" class="trade p-${U.esc(t.pair)}" style="${Pairs.style(t.pair)}" data-act="openTrade" data-id="${t.id}">
     <div class="r1">
       <span class="pair">${U.esc(t.pair)}</span>
       <span class="side ${t.side === 'Sell' ? 'sell' : 'buy'}">${t.side === 'Sell' ? 'SELL' : 'BUY'}</span>
@@ -322,7 +441,7 @@ function viewTrades() {
     <button type="button" class="btn primary block" data-act="addTrade">+ Add trade</button>
 
     ${chips('tradeRange', ui.tradeRange, [['today', 'Today'], ['week', 'Week'], ['month', 'Month'], ['all', 'All']])}
-    ${chips('tradePair', ui.tradePair, [['all', 'All pairs'], ['NAS100', 'NAS100'], ['XAUUSD', 'XAUUSD'], ['EURUSD', 'EURUSD']])}
+    ${chips('tradePair', ui.tradePair, [['all', 'All pairs'], ...Pairs.all().filter(p => !p.hidden || p.name === ui.tradePair).map(p => [U.esc(p.name), U.esc(p.name)])])}
     <p class="muted small sumline">${list.length} trade${list.length === 1 ? '' : 's'} · <span class="${U.cls(total)}">${U.money(total)}</span></p>
     ${list.length ? tradeGroups(list) : '<p class="empty">No trades in this range.</p>'}
   </section>`;
@@ -332,17 +451,16 @@ function viewTrades() {
 
 const form = { id: null, shot: null, pnlTouched: false };
 
-function pointValue(pair) {
-  const v = U.num((Store.settings().pointValue || {})[pair]);
-  return v > 0 ? v : (PAIRS[pair] || PAIRS.NAS100).value;
-}
+function pointValue(pair) { return Pairs.value(pair); }
 
 // PnL = points × lot × $ per point for 1.00 lot.
 function autoPnl(f) {
   const pts = Math.abs(U.num(f.points.value));
   const lot = U.num(f.lot.value);
   if (!isFinite(pts) || !isFinite(lot)) return NaN;
-  return Math.round(pts * lot * pointValue(f.pair.value) * 100) / 100;
+  const pv = pointValue(formPair());
+  if (!isFinite(pv)) return NaN;
+  return Math.round(pts * lot * pv * 100) / 100;
 }
 
 function openTradeForm(id) {
@@ -359,7 +477,7 @@ function openTradeForm(id) {
   f.account.value = t ? t.accountId || '' : ui.acct !== 'all' ? ui.acct : lsGet('dt.lastAcct', '');
   if (!f.account.value && accts[0]) f.account.value = accts[0].id;
   $('#noAcctHint').hidden = accts.length > 0;
-  f.pair.value = t ? t.pair : lsGet('dt.lastPair', 'NAS100');
+  renderPairPick(t ? t.pair : lsGet('dt.lastPair', ''));
   f.side.value = t ? t.side : 'Buy';
   f.lot.value = t ? t.lot || '' : lsGet('dt.lastLot', '');
   f.date.value = t ? t.date : U.today();
@@ -390,7 +508,7 @@ function readForm() {
   const sl = U.num(f.slPts.value);
   return {
     accountId: f.account.value,
-    pair: f.pair.value,
+    pair: formPair(),
     side: f.side.value,
     lot: f.lot.value.trim(),
     date: f.date.value,
@@ -409,12 +527,14 @@ function updatePreview() {
   if (/^\s*-/.test(f.points.value) || /^\s*-/.test(f.pnl.value)) f.result.value = 'Loss';
   const auto = autoPnl(f);
   if (!form.pnlTouched) f.pnl.value = isFinite(auto) ? auto : '';
-  const unitName = f.pair.value === 'EURUSD' ? 'pip' : 'point';
+  const unitName = Pairs.unit(formPair()) === 'pips' ? 'pip' : 'point';
   $('#pnlHint').innerHTML = form.pnlTouched
     ? `PnL typed by you. <button type="button" class="linkbtn" data-act="autoPnl">Use auto</button>`
     : isFinite(auto)
-      ? `Auto: ${Math.abs(U.num(f.points.value))} × ${U.num(f.lot.value)} lot × $${pointValue(f.pair.value)} per ${unitName}`
-      : 'Enter points and lot to calculate PnL.';
+      ? `Auto: ${Math.abs(U.num(f.points.value))} × ${U.num(f.lot.value)} lot × $${pointValue(formPair())} per ${unitName}`
+      : formPair() && !isFinite(pointValue(formPair()))
+        ? `Set the $ per ${unitName} for ${U.esc(formPair())} in “Add or edit pairs” to calculate PnL.`
+        : 'Enter points and lot to calculate PnL.';
   const t = readForm();
   const c = U.calc(t);
   const unitLabel = c.unit === 'pips' ? 'Pips' : 'Points';
@@ -449,6 +569,7 @@ function saveTrade() {
   const f = $('#tradeForm');
   const t = readForm();
   if (!t.accountId) return toast('Add an account first: Trades → + Add account.');
+  if (!t.pair) return toast('Pick a pair, or add one with “Add or edit pairs”.');
   if (!t.date || !t.time) return toast('Set the date and time.');
   if (!isFinite(U.num(t.points))) return toast('Enter the points.');
   if (!isFinite(U.num(t.pnl))) return toast('Enter the PnL in $.');
@@ -1032,11 +1153,11 @@ function groupStats(trades, keyFn, order) {
     s.n++; s.pnl += p;
     if (p > 0) s.w++; else if (p < 0) s.l++;
   }
-  const keys = order ? order.filter(k => g[k]) : Object.keys(g);
+  const keys = order ? [...order.filter(k => g[k]), ...Object.keys(g).filter(k => !order.includes(k))] : Object.keys(g);
   return keys.map(k => ({ k, ...g[k] }));
 }
 
-function statTable(title, rows) {
+function statTable(title, rows, styleFn) {
   if (!rows.length) return '';
   const best = rows.reduce((a, b) => (b.pnl > a.pnl ? b : a));
   return `<div class="card">
@@ -1044,7 +1165,7 @@ function statTable(title, rows) {
     <table class="tbl">
       <thead><tr><th></th><th>Trades</th><th>Win %</th><th>PnL</th></tr></thead>
       <tbody>${rows.map(r => `<tr${rows.length > 1 && r === best && r.pnl > 0 ? ' class="best"' : ''}>
-        <td><span class="dot k-${U.esc(String(r.k).replace(/[^A-Za-z0-9]/g, ''))}"></span>${U.esc(r.k)}${rows.length > 1 && r === best && r.pnl > 0 ? ' ★' : ''}</td><td>${r.n}</td>
+        <td><span class="dot k-${U.esc(String(r.k).replace(/[^A-Za-z0-9]/g, ''))}"${styleFn ? ` style="${styleFn(r.k)}"` : ''}></span>${U.esc(r.k)}${rows.length > 1 && r === best && r.pnl > 0 ? ' ★' : ''}</td><td>${r.n}</td>
         <td>${r.w + r.l ? Math.round(r.w / (r.w + r.l) * 100) + '%' : '–'}</td>
         <td class="${U.cls(r.pnl)}">${U.money(r.pnl)}</td></tr>`).join('')}</tbody>
     </table>
@@ -1153,7 +1274,7 @@ function viewTrading(from, to, head) {
       ${worstDay ? tile('Worst day', U.money(worstDay.pnl), U.cls(worstDay.pnl), U.fmtDate(worstDay.k, { day: 'numeric', month: 'short' })) : ''}
     </div>
     ${trades.length ? '' : '<p class="empty">No trades in this range yet.</p>'}
-    ${statTable('By pair', groupStats(trades, t => t.pair, Object.keys(PAIRS)))}
+    ${statTable('By pair', groupStats(trades, t => t.pair, Pairs.all().map(p => p.name)), Pairs.style)}
     ${statTable('By session', groupStats(trades, t => U.calc(t).session || '–', ['Asia', 'London', 'London/NY overlap', 'New York', 'Off-session']))}
     ${statTable('Buy vs Sell', groupStats(trades, t => t.side, ['Buy', 'Sell']))}
     ${ui.acct === 'all' && Acct.all().length > 1 ? statTable('By account', groupStats(trades, t => Acct.label(Store.get('accounts', t.accountId)))) : ''}
@@ -1250,7 +1371,6 @@ function openSettings() {
   f.token.value = c.token;
   f.lossLimit.value = U.num(Store.settings().lossLimit) > 0 ? Store.settings().lossLimit : '';
   f.theme.value = lsGet('dt.theme', 'dark');
-  for (const p of Object.keys(PAIRS)) f['pv_' + p].value = pointValue(p);
   renderSyncInfo();
   $('#settingsDlg').showModal();
 }
@@ -1381,6 +1501,11 @@ const actions = {
     }
   },
   manageCats() { openCats(); },
+  managePairs() { openPairs(); },
+  addPair() { addPair(); },
+  hidePair(el) { setPairHidden(el.dataset.id, true); },
+  showPair(el) { setPairHidden(el.dataset.id, false); },
+  delPair(el) { delPair(el.dataset.id); },
   setAllow(el) { openAllow(el.dataset.v); },
   delAllow() {
     if (!confirm("Remove this week's money?")) return;
@@ -1484,11 +1609,8 @@ document.addEventListener('change', async e => {
     el.value = '';
   } else if (el.name === 'theme') {
     lsSet('dt.theme', el.value); applyTheme(el.value);
-  } else if (el.name && el.name.startsWith('pv_')) {
-    const pv = { ...(Store.settings().pointValue || {}) };
-    const v = U.num(el.value);
-    pv[el.name.slice(3)] = v > 0 ? v : PAIRS[el.name.slice(3)].value;
-    Store.setSettings({ pointValue: pv });
+  } else if (el.dataset.pair) {
+    editPair(el);
   } else if (el.dataset.cat) {
     renameCat(el);
   } else if (el.closest('#expForm')) {
@@ -1534,7 +1656,7 @@ document.addEventListener('submit', e => {
   } else if (e.target.id === 'allowForm') {
     e.preventDefault();
     saveAllow();
-  } else if (e.target.id === 'catForm' || e.target.id === 'settingsForm') {
+  } else if (e.target.id === 'catForm' || e.target.id === 'pairForm' || e.target.id === 'settingsForm') {
     e.preventDefault();
   }
 });
@@ -1545,6 +1667,22 @@ $('#catForm').addEventListener('keydown', e => {
   e.preventDefault();
   if (e.target.name === 'newName' || e.target.name === 'newEmoji') addCat();
   else e.target.blur();
+});
+
+// Enter in the "new pair" boxes adds it; in an edit box it saves the field.
+$('#pairForm').addEventListener('keydown', e => {
+  if (e.key !== 'Enter' || e.target.tagName !== 'INPUT') return;
+  e.preventDefault();
+  if (e.target.name === 'newName' || e.target.name === 'newValue') addPair();
+  else e.target.blur();
+});
+
+// The page isn't rebuilt under an open trade form, so catch up when it closes.
+$('#tradeDlg').addEventListener('close', () => render());
+
+// Pairs edited from inside the trade form show up there right away.
+$('#pairDlg').addEventListener('close', () => {
+  if ($('#tradeDlg').open) { renderPairPick(formPair()); updatePreview(); }
 });
 
 // Categories edited from inside the expense form show up there right away.
@@ -1558,8 +1696,9 @@ for (const d of $$('dialog')) {
 }
 
 Store.on(() => {
-  // Don't rebuild the page under an open trade form; just refresh the header.
-  if ($('#tradeDlg').open) renderHeader(); else render();
+  // Don't rebuild the page under an open trade form; just refresh the header
+  // and the pair buttons (pairs can be edited from inside the form).
+  if ($('#tradeDlg').open) { renderHeader(); renderPairPick(formPair()); } else render();
   if ($('#settingsDlg').open) renderSyncInfo();
   if ($('#weekDlg').open) renderWeek(ui.weekOpen);
 });

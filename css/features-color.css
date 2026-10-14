@@ -146,3 +146,9 @@ body[data-tab="money"] .statrow { border-top-color: var(--c-money); }
 .wallet .limit .bar i { background: linear-gradient(90deg, #22c55e, #10b981); }
 .wallet .limit.warn .bar i { background: var(--amber); }
 .wallet .limit.hit .bar i { background: var(--neg); }
+
+/* ---------- Pair colors (any pair, via --pc) ---------- */
+.trade[style], .card .trade[style] { border-left-color: var(--pc); }
+.trade[style] .pair { color: var(--pc); }
+.tbl .dot[style] { background: var(--pc); }
+#pairPick input:checked + span { background: var(--pc, var(--accent)); color: #fff; }
