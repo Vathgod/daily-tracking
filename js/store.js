@@ -41,7 +41,7 @@ const Store = (() => {
   const KINDS = ['tasks', 'trades', 'accounts'];
 
   let state = blank();
-  const cfg = { owner: 'Vathgod', repo: 'daily-tracking-data', token: '' };
+  const cfg = { owner: '', repo: 'daily-tracking-data', token: '' };
   let status = 'local';
   let lastError = '';
   let syncTimer = null;
