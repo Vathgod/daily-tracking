@@ -20,7 +20,8 @@ const DEFAULT_CATS = [
 
 const SPEND_DAYS = 5;
 
-const METHODS = { cash: '💵 Cash', aba: '🏦 ABA' };
+const METHODS = { cash: '💵 Cash', aba: '🏦 Bank', card: '💳 Card' };
+const methodOf = m => (METHODS[m] ? m : 'cash');
 
 const Money = {
   usd(e) {
@@ -95,9 +96,14 @@ const Money = {
   },
 
   byMethod(list) {
-    const m = { cash: 0, aba: 0 };
-    for (const e of list) m[e.method === 'aba' ? 'aba' : 'cash'] += Money.usd(e);
+    const m = { cash: 0, aba: 0, card: 0 };
+    for (const e of list) m[methodOf(e.method)] += Money.usd(e);
     return m;
+  },
+
+  // "💵 Cash $5 · 💳 Card $12", leaving out methods with nothing spent.
+  methodLine(m) {
+    return Object.keys(METHODS).filter(k => m[k] > 0).map(k => `${METHODS[k]} ${U.money(m[k], false)}`).join(' · ');
   },
 
   // date -> $ spent

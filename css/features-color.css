@@ -125,6 +125,7 @@ body[data-tab="money"] .statrow { border-top-color: var(--c-money); }
 .cur input:checked + span { background: var(--c-money); color: #fff; }
 .method .cash input:checked + span { background: #16a34a; color: #fff; }
 .method .aba input:checked + span { background: #0e5a8a; color: #fff; }
+.method .paycard input:checked + span { background: #7c3aed; color: #fff; }
 .catpick input:checked + span { background: var(--c-money); border-color: transparent; color: #fff; }
 
 /* Calendar in Money mode */

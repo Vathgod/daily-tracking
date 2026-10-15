@@ -697,7 +697,7 @@ function saveAcct() {
 
 function expRow(e) {
   const c = Money.cat(e.cat);
-  const meta = [e.time, METHODS[e.method] || METHODS.cash].filter(Boolean).map(U.esc).join(' · ');
+  const meta = [e.time, METHODS[methodOf(e.method)]].filter(Boolean).map(U.esc).join(' · ');
   return `<button type="button" class="exp" data-act="openExp" data-id="${e.id}">
     <span class="ex-emo" aria-hidden="true">${U.esc(c.emoji || '•')}</span>
     <span class="ex-main"><b>${U.esc(c.name)}</b><small>${meta}</small>${e.note ? `<small class="note">${U.esc(e.note)}</small>` : ''}</span>
@@ -836,7 +836,7 @@ function viewMoney() {
 
     ${chips('moneyRange', ui.moneyRange, [['today', 'Today'], ['week', 'This week'], ['month', 'Month'], ['all', 'All']])}
     <p class="muted small sumline">${list.length} item${list.length === 1 ? '' : 's'} · <b>${U.money(total, false)}</b>
-      ${list.length ? ` · ${METHODS.cash} ${U.money(m.cash, false)} · ${METHODS.aba} ${U.money(m.aba, false)}` : ''}</p>
+      ${list.length ? ` · ${U.esc(Money.methodLine(m))}` : ''}</p>
     ${catBreakdown(list)}
     ${list.length ? expGroups(list) : '<p class="empty">No spending in this range.</p>'}
     ${weekHistory()}
@@ -929,7 +929,7 @@ function openExpForm(id, date) {
   f.amount.value = e ? e.amount : '';
   f.cur.value = e ? e.cur : lsGet('dt.lastCur', 'KHR');
   renderCatPick(e ? Money.cat(e.cat).id : '');
-  f.method.value = e ? e.method || 'cash' : lsGet('dt.lastMethod', 'cash');
+  f.method.value = methodOf(e ? e.method : lsGet('dt.lastMethod', 'cash'));
   f.date.value = e ? e.date : date || U.today();
   f.time.value = e ? e.time || '' : U.nowTime();
   f.note.value = e ? e.note || '' : '';
@@ -967,7 +967,7 @@ function saveExp() {
     ...(old || { id: U.uid(), createdAt: Date.now() }),
     amount: String(cur === 'KHR' ? Math.round(amt) : Math.round(amt * 100) / 100),
     cur, cat,
-    method: f.method.value === 'aba' ? 'aba' : 'cash',
+    method: methodOf(f.method.value),
     date, time: f.time.value,
     note: f.note.value.trim(),
   };
@@ -1334,7 +1334,7 @@ function reviewSpending(from) {
       ${w.a ? `<div class="tile"><span>${w.left < 0 ? 'Over budget' : 'Left over'}</span><b class="${U.cls(w.left)}">${U.money(Math.abs(w.left), false)}</b><small>of ${Money.fmtOrig(w.a)}</small></div>` : ''}
       <div class="tile"><span>Spent</span><b>${U.money(total, false)}</b><small>≈ ${Money.fmtKHR(total * KHR_PER_USD)}</small></div>
       <div class="tile"><span>Avg / day</span><b>${U.money(total / 7, false)}</b>${limit ? `<small>${over} day${over === 1 ? '' : 's'} over limit</small>` : ''}</div>
-      <div class="tile"><span>Cash · ABA</span><b>${U.money(m.cash, false)} · ${U.money(m.aba, false)}</b></div>
+      ${total > 0 ? `<div class="tile"><span>Paid with</span><b class="small">${U.esc(Money.methodLine(m))}</b></div>` : ''}
     </div>
     <ul class="missedlist">${cats.slice(0, 3).map(c =>
       `<li><span>${U.esc(Money.catLabel(c.id))}</span><b>${U.money(c.usd, false)}</b></li>`).join('')}</ul>`;
