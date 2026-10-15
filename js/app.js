@@ -21,6 +21,7 @@ const ui = {
   moneyRange: 'week',
   histAll: false,
   weekOpen: null,
+  walletWs: null, // Sunday of the week shown on the wallet card (null = this week)
   acct: lsGet('dt.acct', 'all'),
 };
 
@@ -754,18 +755,28 @@ function todayBlock(spent, limit) {
     </div>`;
 }
 
-// Wallet for one spending week (Sunday to Saturday).
+// Wallet for one spending week (Sunday to Saturday). The arrows step back
+// through past weeks so their money can be set and their spending checked.
 function walletCard(ws) {
   const w = Money.week(ws);
   const today = U.today();
   const current = ws === Money.weekStart(today);
-  const head = `<div class="row"><b>👛 ${current ? 'This week' : 'Week'}</b><span class="muted small">${U.esc(Money.weekLabel(ws))}</span></div>`;
+  const head = `<div class="row w-head">
+      <button type="button" class="icon nav" data-act="walletShift" data-v="-1" aria-label="Previous week">‹</button>
+      <span class="w-title"><b>👛 ${current ? 'This week' : ws === U.addDays(Money.weekStart(today), -7) ? 'Last week' : 'Past week'}</b><span class="muted small">${U.esc(Money.weekLabel(ws))}</span></span>
+      <button type="button" class="icon nav" data-act="walletShift" data-v="1" aria-label="Next week"${current ? ' disabled' : ''}>›</button>
+    </div>`;
+  const foot = current ? '' : `<div class="w-links">
+      <button type="button" class="linkbtn" data-act="openWeek" data-v="${ws}">See this week's spending</button>
+      <button type="button" class="linkbtn" data-act="walletNow">Back to this week</button>
+    </div>`;
   if (!w.a) {
     return `<div class="card wallet">
       ${head}
-      <p class="muted small">How much money do you have to spend ${current ? 'this week' : 'for this week'}?</p>
-      ${w.spent ? `<p class="small">Spent so far: <b>${Money.fmt(w.spent, false)}</b></p>` : ''}
+      <p class="muted small">How much money ${current ? 'do you have to spend this week' : 'did you have for this week'}?</p>
+      ${w.spent ? `<p class="small">${current ? 'Spent so far' : 'Spent'}: <b>${Money.fmt(w.spent, false)}</b> · ${w.list.length} item${w.list.length === 1 ? '' : 's'}</p>` : ''}
       <button type="button" class="btn primary block" data-act="setAllow" data-v="${ws}">+ Add week's money</button>
+      ${foot}
     </div>`;
   }
   const pctLeft = w.got > 0 ? Math.max(0, Math.min(100, w.left / w.got * 100)) : 0;
@@ -789,7 +800,23 @@ function walletCard(ws) {
     ${current ? todayBlock(spentToday, daily) : ''}
     ${current ? `<p class="muted small w-note">${daysLeft} day${daysLeft === 1 ? '' : 's'} left until Saturday · daily limit = money ÷ ${SPEND_DAYS}</p>` : ''}
     <button type="button" class="linkbtn" data-act="setAllow" data-v="${ws}">Edit week's money</button>
+    ${foot}
   </div>`;
+}
+
+// Last week's total, shown at the top for the first two days of a new week.
+function lastWeekRecap() {
+  const today = U.today();
+  const cur = Money.weekStart(today);
+  if (today > U.addDays(cur, 1)) return '';
+  const w = Money.week(U.addDays(cur, -7));
+  if (!w.a && !w.list.length) return '';
+  const msg = !w.a ? `you spent <b>${Money.fmt(w.spent, false)}</b>`
+    : w.left < 0 ? `you spent <b>${Money.fmt(w.spent, false)}</b> of ${Money.fmtOrig(w.a)}, <b>${Money.fmt(-w.left, false)} over</b> 😬`
+    : `you spent <b>${Money.fmt(w.spent, false)}</b> of ${Money.fmtOrig(w.a)}, <b>${Money.fmt(w.left, false)} left over</b> 🎉`;
+  return `<button type="button" class="banner recap ${!w.a ? '' : w.left < 0 ? 'red' : 'green'}" data-act="openWeek" data-v="${w.ws}">
+    <span>📅 Last week ${msg}</span><span class="recap-go" aria-hidden="true">›</span>
+  </button>`;
 }
 
 function weekHistory() {
@@ -813,6 +840,12 @@ function weekHistory() {
   </div>`;
 }
 
+// The wallet card's week; it never goes past this week.
+function walletWeek() {
+  const cur = Money.weekStart(U.today());
+  return ui.walletWs && ui.walletWs < cur ? ui.walletWs : cur;
+}
+
 function viewMoney() {
   const today = U.today();
   const todays = Money.list(today, today);
@@ -826,7 +859,8 @@ function viewMoney() {
 
   return `<section class="view">
     ${spendBanner(spent)}
-    ${walletCard(Money.weekStart(today))}
+    ${lastWeekRecap()}
+    ${walletCard(walletWeek())}
     <div class="card statrow">
       <div><span>Spent today</span><b>${Money.fmt(spent, false)}</b></div>
       <div><span>This month</span><b>${Money.fmt(month, false)}</b></div>
@@ -1528,6 +1562,8 @@ const actions = {
   },
   openWeek(el) { openWeek(el.dataset.v); },
   histAll() { ui.histAll = !ui.histAll; render(); },
+  walletShift(el) { ui.walletWs = U.addDays(walletWeek(), 7 * el.dataset.v); render(); },
+  walletNow() { ui.walletWs = null; render(); },
   addCat() { addCat(); },
   delCat(el) { delCat(el.dataset.id); },
   addTrade() { openTradeForm(null); },
