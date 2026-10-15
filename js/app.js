@@ -701,7 +701,7 @@ function expRow(e) {
   return `<button type="button" class="exp" data-act="openExp" data-id="${e.id}">
     <span class="ex-emo" aria-hidden="true">${U.esc(c.emoji || '•')}</span>
     <span class="ex-main"><b>${U.esc(c.name)}</b><small>${meta}</small>${e.note ? `<small class="note">${U.esc(e.note)}</small>` : ''}</span>
-    <span class="ex-amt"><b>${U.money(Money.usd(e), false)}</b>${e.cur === 'KHR' ? `<small>${Money.fmtKHR(U.num(e.amount))}</small>` : ''}</span>
+    <span class="ex-amt"><b>${Money.fmt(Money.usd(e), false)}</b>${e.cur === 'KHR' ? `<small>${Money.fmtKHR(U.num(e.amount))}</small>` : ''}</span>
   </button>`;
 }
 
@@ -714,7 +714,7 @@ function expGroups(list) {
   return [...groups].map(([date, items]) => {
     const t = Money.total(items);
     const limit = Money.dailyBudget(date);
-    return `<h3 class="dayhead"><span>${U.esc(U.dayLabel(date))}</span><span class="${limit && t > limit ? 'neg' : ''}">${U.money(t, false)}</span></h3>
+    return `<h3 class="dayhead"><span>${U.esc(U.dayLabel(date))}</span><span class="${limit && t > limit ? 'neg' : ''}">${Money.fmt(t, false)}</span></h3>
       <div class="explist">${items.map(expRow).join('')}</div>`;
   }).join('');
 }
@@ -730,7 +730,7 @@ function catBreakdown(list) {
       const c = Money.cat(r.id);
       return `<div class="cb-row">
         <div class="row small"><span>${U.esc(c.emoji || '•')} ${U.esc(c.name)} <span class="muted">· ${r.n}×</span></span>
-          <span><b>${U.money(r.usd, false)}</b> <span class="muted">${Math.round(r.usd / total * 100)}%</span></span></div>
+          <span><b>${Money.fmt(r.usd, false)}</b> <span class="muted">${Math.round(r.usd / total * 100)}%</span></span></div>
         <div class="bar"><i style="width:${top > 0 ? Math.max(2, r.usd / top * 100) : 0}%"></i></div>
       </div>`;
     }).join('')}
@@ -740,8 +740,8 @@ function catBreakdown(list) {
 function spendBanner(spent) {
   const limit = Money.dailyBudget(U.today());
   if (!limit) return '';
-  if (spent > limit) return `<div class="banner red">🛑 You're ${U.money(spent - limit, false)} over today's limit.</div>`;
-  if (spent >= limit * 0.75) return `<div class="banner amber">⚠️ Only ${U.money(limit - spent, false)} left to spend today.</div>`;
+  if (spent > limit) return `<div class="banner red">🛑 You're ${Money.fmt(spent - limit, false)} over today's limit.</div>`;
+  if (spent >= limit * 0.75) return `<div class="banner amber">⚠️ Only ${Money.fmt(limit - spent, false)} left to spend today.</div>`;
   return '';
 }
 
@@ -749,7 +749,7 @@ function spendBanner(spent) {
 function todayBlock(spent, limit) {
   const pct = spent / limit * 100;
   return `<div class="limit ${riskLevel(pct)}">
-      <div class="row small"><span>Today</span><span><b>${U.money(spent, false)}</b> / ${U.money(limit, false)} · ${spent > limit ? `<b class="neg">${U.money(spent - limit, false)} over</b>` : `${U.money(limit - spent, false)} left`}</span></div>
+      <div class="row small"><span>Today</span><span><b>${Money.fmt(spent, false)}</b> / ${Money.fmt(limit, false)} · ${spent > limit ? `<b class="neg">${Money.fmt(spent - limit, false)} over</b>` : `${Money.fmt(limit - spent, false)} left`}</span></div>
       <div class="bar"><i style="width:${Math.min(100, pct)}%"></i></div>
     </div>`;
 }
@@ -764,7 +764,7 @@ function walletCard(ws) {
     return `<div class="card wallet">
       ${head}
       <p class="muted small">How much money do you have to spend ${current ? 'this week' : 'for this week'}?</p>
-      ${w.spent ? `<p class="small">Spent so far: <b>${U.money(w.spent, false)}</b></p>` : ''}
+      ${w.spent ? `<p class="small">Spent so far: <b>${Money.fmt(w.spent, false)}</b></p>` : ''}
       <button type="button" class="btn primary block" data-act="setAllow" data-v="${ws}">+ Add week's money</button>
     </div>`;
   }
@@ -777,14 +777,14 @@ function walletCard(ws) {
     ${head}
     <div class="w-left">
       <span class="muted small">${w.left < 0 ? 'Over budget by' : current ? 'Left in wallet' : 'Left over'}</span>
-      <span class="big ${w.left < 0 ? 'neg' : ''}">${U.money(Math.abs(w.left), false)}</span>
+      <span class="big ${w.left < 0 ? 'neg' : ''}">${Money.fmt(Math.abs(w.left), false)}</span>
       ${w.a.cur === 'KHR' ? `<span class="muted small">≈ ${Money.fmtKHR(Math.abs(w.left) * KHR_PER_USD)}</span>` : ''}
     </div>
     <div class="bar"><i style="width:${pctLeft}%"></i></div>
     <div class="w-stats">
       <div><span>Week's money</span><b>${Money.fmtOrig(w.a)}</b></div>
-      <div><span>Spent</span><b>${U.money(w.spent, false)}</b></div>
-      <div><span>Daily limit</span><b>${U.money(daily, false)}</b></div>
+      <div><span>Spent</span><b>${Money.fmt(w.spent, false)}</b></div>
+      <div><span>Daily limit</span><b>${Money.fmt(daily, false)}</b></div>
     </div>
     ${current ? todayBlock(spentToday, daily) : ''}
     ${current ? `<p class="muted small w-note">${daysLeft} day${daysLeft === 1 ? '' : 's'} left until Saturday · daily limit = money ÷ ${SPEND_DAYS}</p>` : ''}
@@ -800,13 +800,13 @@ function weekHistory() {
   const saved = weeks.map(Money.week).filter(w => w.a).reduce((a, w) => a + w.left, 0);
   return `<div class="card history">
     <div class="row"><h4 class="sub">📅 Week history</h4>
-      <span class="small muted">Left over in total <b class="${U.cls(saved)}">${U.money(saved)}</b></span></div>
+      <span class="small muted">Left over in total <b class="${U.cls(saved)}">${Money.fmt(saved)}</b></span></div>
     <div class="histlist">${shown.map(ws => {
       const w = Money.week(ws);
       return `<button type="button" class="histrow" data-act="openWeek" data-v="${ws}">
         <span class="h-main"><span class="h-date">${U.esc(Money.weekLabel(ws))}</span>
-          <span class="h-nums">Money <b>${w.a ? Money.fmtOrig(w.a) : '–'}</b> · Spent <b>${U.money(w.spent, false)}</b></span></span>
-        <span class="h-left ${w.a ? U.cls(w.left) : ''}">${w.a ? U.money(w.left) : '–'}<small>${w.a ? (w.left < 0 ? 'over' : 'left') : 'no money set'}</small></span>
+          <span class="h-nums">Money <b>${w.a ? Money.fmtOrig(w.a) : '–'}</b> · Spent <b>${Money.fmt(w.spent, false)}</b></span></span>
+        <span class="h-left ${w.a ? U.cls(w.left) : ''}">${w.a ? Money.fmt(w.left) : '–'}<small>${w.a ? (w.left < 0 ? 'over' : 'left') : 'no money set'}</small></span>
       </button>`;
     }).join('')}</div>
     ${weeks.length > 6 ? `<button type="button" class="btn ghost block" data-act="histAll">${ui.histAll ? 'Show less' : `Show all ${weeks.length} weeks`}</button>` : ''}
@@ -828,14 +828,14 @@ function viewMoney() {
     ${spendBanner(spent)}
     ${walletCard(Money.weekStart(today))}
     <div class="card statrow">
-      <div><span>Spent today</span><b>${U.money(spent, false)}</b></div>
-      <div><span>This month</span><b>${U.money(month, false)}</b></div>
-      <div><span>Avg / day</span><b>${U.money(Money.perDay(month, monthFrom, today), false)}</b></div>
+      <div><span>Spent today</span><b>${Money.fmt(spent, false)}</b></div>
+      <div><span>This month</span><b>${Money.fmt(month, false)}</b></div>
+      <div><span>Avg / day</span><b>${Money.fmt(Money.perDay(month, monthFrom, today), false)}</b></div>
     </div>
     <button type="button" class="btn primary block" data-act="addExp">+ Add expense</button>
 
     ${chips('moneyRange', ui.moneyRange, [['today', 'Today'], ['week', 'This week'], ['month', 'Month'], ['all', 'All']])}
-    <p class="muted small sumline">${list.length} item${list.length === 1 ? '' : 's'} · <b>${U.money(total, false)}</b>
+    <p class="muted small sumline">${list.length} item${list.length === 1 ? '' : 's'} · <b>${Money.fmt(total, false)}</b>
       ${list.length ? ` · ${U.esc(Money.methodLine(m))}` : ''}</p>
     ${catBreakdown(list)}
     ${list.length ? expGroups(list) : '<p class="empty">No spending in this range.</p>'}
@@ -845,6 +845,15 @@ function viewMoney() {
 }
 
 // ---------- Week's money ----------
+
+// In NZ$ mode every amount is NZ$, so the riel/dollar switch is hidden.
+function curPick(f) {
+  f.querySelector('.cur').hidden = Money.nz();
+}
+
+function formCur(f) {
+  return Money.nz() ? 'NZD' : f.cur.value === 'KHR' ? 'KHR' : 'USD';
+}
 
 const aw = { ws: null };
 
@@ -858,6 +867,7 @@ function openAllow(ws) {
   // A new week starts with last week's amount, ready to confirm.
   f.amount.value = last ? last.amount : '';
   f.cur.value = last ? last.cur : lsGet('dt.lastCur', 'USD');
+  curPick(f);
   $('#delAllow').hidden = !a;
   allowHint();
   $('#allowDlg').showModal();
@@ -866,14 +876,14 @@ function openAllow(ws) {
 function allowHint() {
   const f = $('#allowForm');
   const v = Money.parse(f.amount.value, f.cur.value);
-  let txt = !(v > 0) ? '' : f.cur.value === 'KHR' ? `= ${U.money(v / KHR_PER_USD, false)}` : `= ${Money.fmtKHR(v * KHR_PER_USD)}`;
-  if (!Money.allowance(aw.ws) && v > 0 && Money.lastAllowance(aw.ws)) txt += ' · same as last week, change it if needed';
+  let txt = !(v > 0) || Money.nz() ? '' : f.cur.value === 'KHR' ? `= ${Money.fmt(v / KHR_PER_USD, false)}` : `= ${Money.fmtKHR(v * KHR_PER_USD)}`;
+  if (!Money.allowance(aw.ws) && v > 0 && Money.lastAllowance(aw.ws)) txt += `${txt ? ' · ' : ''}same as last week, change it if needed`;
   $('#allowHint').textContent = txt;
 }
 
 function saveAllow() {
   const f = $('#allowForm');
-  const cur = f.cur.value === 'KHR' ? 'KHR' : 'USD';
+  const cur = formCur(f);
   const v = Money.parse(f.amount.value, cur);
   if (!(v > 0)) return toast('Enter the money you have for this week.');
   const old = Money.allowance(aw.ws);
@@ -894,10 +904,10 @@ function renderWeek(ws) {
   $('#weekTitle').textContent = `👛 ${Money.weekLabel(ws)}`;
   $('#weekBody').innerHTML = `
     <div class="tiles">
-      <div class="tile"><span>Week's money</span><b>${w.a ? Money.fmtOrig(w.a) : '–'}</b>${w.a && w.a.cur === 'KHR' ? `<small>= ${U.money(w.got, false)}</small>` : ''}</div>
-      <div class="tile"><span>Spent</span><b>${U.money(w.spent, false)}</b><small>${w.list.length} item${w.list.length === 1 ? '' : 's'}</small></div>
-      <div class="tile"><span>${w.left < 0 ? 'Over budget' : 'Left over'}</span><b class="${w.a ? U.cls(w.left) : ''}">${w.a ? U.money(Math.abs(w.left), false) : '–'}</b></div>
-      <div class="tile"><span>Avg / day</span><b>${U.money(w.spent / 7, false)}</b></div>
+      <div class="tile"><span>Week's money</span><b>${w.a ? Money.fmtOrig(w.a) : '–'}</b>${w.a && w.a.cur === 'KHR' ? `<small>= ${Money.fmt(w.got, false)}</small>` : ''}</div>
+      <div class="tile"><span>Spent</span><b>${Money.fmt(w.spent, false)}</b><small>${w.list.length} item${w.list.length === 1 ? '' : 's'}</small></div>
+      <div class="tile"><span>${w.left < 0 ? 'Over budget' : 'Left over'}</span><b class="${w.a ? U.cls(w.left) : ''}">${w.a ? Money.fmt(Math.abs(w.left), false) : '–'}</b></div>
+      <div class="tile"><span>Avg / day</span><b>${Money.fmt(w.spent / 7, false)}</b></div>
     </div>
     <button type="button" class="btn ghost block" data-act="setAllow" data-v="${ws}">${w.a ? "Edit week's money" : "+ Add week's money"}</button>
     ${catBreakdown(w.list)}
@@ -928,6 +938,7 @@ function openExpForm(id, date) {
   $('#expTitle').textContent = e ? 'Edit expense' : 'New expense';
   f.amount.value = e ? e.amount : '';
   f.cur.value = e ? e.cur : lsGet('dt.lastCur', 'KHR');
+  curPick(f);
   renderCatPick(e ? Money.cat(e.cat).id : '');
   f.method.value = methodOf(e ? e.method : lsGet('dt.lastMethod', 'cash'));
   f.date.value = e ? e.date : date || U.today();
@@ -941,20 +952,21 @@ function openExpForm(id, date) {
 function expHint() {
   const f = $('#expForm');
   const v = Money.parse(f.amount.value, f.cur.value);
-  if (!(v > 0)) { $('#expHint').textContent = 'Riel is counted at 4,100៛ = $1.'; return; }
-  const usd = Money.usd({ amount: v, cur: f.cur.value });
-  let txt = f.cur.value === 'KHR' ? `= ${U.money(usd, false)}` : `= ${Money.fmtKHR(v * KHR_PER_USD)}`;
+  if (!(v > 0)) { $('#expHint').textContent = Money.nz() ? '' : 'Riel is counted at 4,100៛ = $1.'; return; }
+  const cur = formCur(f);
+  const usd = Money.usd({ amount: v, cur });
+  let txt = Money.nz() ? '' : cur === 'KHR' ? `= ${Money.fmt(usd, false)}` : `= ${Money.fmtKHR(v * KHR_PER_USD)}`;
   const limit = f.date.value ? Money.dailyBudget(f.date.value) : 0;
   if (limit) {
     const before = Money.total(Money.list(f.date.value, f.date.value).filter(e => e.id !== eform.id));
-    txt += ` · ${f.date.value === U.today() ? 'today' : 'that day'} will be ${U.money(before + usd, false)} of the ${U.money(limit, false)} daily limit`;
+    txt += `${txt ? ' · ' : ''}${f.date.value === U.today() ? 'today' : 'that day'} will be ${Money.fmt(before + usd, false)} of the ${Money.fmt(limit, false)} daily limit`;
   }
   $('#expHint').textContent = txt;
 }
 
 function saveExp() {
   const f = $('#expForm');
-  const cur = f.cur.value === 'USD' ? 'USD' : 'KHR';
+  const cur = formCur(f);
   const amt = Money.parse(f.amount.value, cur);
   const cat = ($('#catPick input:checked') || {}).value;
   if (!(amt > 0)) return toast('Enter how much you spent.');
@@ -972,14 +984,14 @@ function saveExp() {
     note: f.note.value.trim(),
   };
   Store.upsert('expenses', item);
-  lsSet('dt.lastCur', cur);
+  if (cur !== 'NZD') lsSet('dt.lastCur', cur);
   lsSet('dt.lastMethod', item.method);
   $('#expDlg').close();
-  toast(old ? 'Expense updated' : `Saved ${U.money(Money.usd(item), false)}`);
+  toast(old ? 'Expense updated' : `Saved ${Money.fmt(Money.usd(item), false)}`);
   const limit = Money.dailyBudget(date);
   const after = before + Money.usd(item);
   if (limit && date === U.today() && after > limit) {
-    setTimeout(() => toast(`🛑 Over today's limit by ${U.money(after - limit, false)}.`), 2700);
+    setTimeout(() => toast(`🛑 Over today's limit by ${Money.fmt(after - limit, false)}.`), 2700);
   }
 }
 
@@ -1048,8 +1060,8 @@ function moneyMonthStats(first, last, spend) {
   const over = Object.entries(spend).filter(([d, v]) => Money.dailyBudget(d) && v > Money.dailyBudget(d)).length;
   const top = Money.byCat(Money.list(first, last))[0];
   return `<div class="card statrow">
-      <div><span>Month spent</span><b>${U.money(total, false)}</b></div>
-      <div><span>Avg / day</span><b>${U.money(avg, false)}</b></div>
+      <div><span>Month spent</span><b>${Money.fmt(total, false)}</b></div>
+      <div><span>Avg / day</span><b>${Money.fmt(avg, false)}</b></div>
       ${limit ? `<div><span>Days over limit</span><b class="${over ? 'neg' : 'pos'}">${over}</b></div>`
         : `<div><span>Top</span><b class="toptxt">${top ? U.esc(Money.catLabel(top.id)) : '–'}</b></div>`}
     </div>
@@ -1101,7 +1113,7 @@ function viewCalendar() {
     const ex = Money.list(sel, sel);
     const t = Money.total(ex);
     detail = `<div class="card">
-      <h3 class="dayhead"><span>${U.esc(U.dayLabel(sel))}</span>${ex.length ? `<span class="${Money.dailyBudget(sel) && t > Money.dailyBudget(sel) ? 'neg' : ''}">${U.money(t, false)}</span>` : ''}</h3>
+      <h3 class="dayhead"><span>${U.esc(U.dayLabel(sel))}</span>${ex.length ? `<span class="${Money.dailyBudget(sel) && t > Money.dailyBudget(sel) ? 'neg' : ''}">${Money.fmt(t, false)}</span>` : ''}</h3>
       ${ex.length ? `<div class="explist">${ex.map(expRow).join('')}</div>` : '<p class="muted small">No spending.</p>'}
       <button type="button" class="btn ghost block addday" data-act="addExp" data-v="${sel}">+ Add expense for this day</button>
     </div>`;
@@ -1331,13 +1343,13 @@ function reviewSpending(from) {
   return `<h3 class="sub spend">💰 Spending</h3>
     <p class="muted small">${U.esc(Money.weekLabel(ws))}</p>
     <div class="tiles">
-      ${w.a ? `<div class="tile"><span>${w.left < 0 ? 'Over budget' : 'Left over'}</span><b class="${U.cls(w.left)}">${U.money(Math.abs(w.left), false)}</b><small>of ${Money.fmtOrig(w.a)}</small></div>` : ''}
-      <div class="tile"><span>Spent</span><b>${U.money(total, false)}</b><small>≈ ${Money.fmtKHR(total * KHR_PER_USD)}</small></div>
-      <div class="tile"><span>Avg / day</span><b>${U.money(total / 7, false)}</b>${limit ? `<small>${over} day${over === 1 ? '' : 's'} over limit</small>` : ''}</div>
+      ${w.a ? `<div class="tile"><span>${w.left < 0 ? 'Over budget' : 'Left over'}</span><b class="${U.cls(w.left)}">${Money.fmt(Math.abs(w.left), false)}</b><small>of ${Money.fmtOrig(w.a)}</small></div>` : ''}
+      <div class="tile"><span>Spent</span><b>${Money.fmt(total, false)}</b>${Money.nz() ? '' : `<small>≈ ${Money.fmtKHR(total * KHR_PER_USD)}</small>`}</div>
+      <div class="tile"><span>Avg / day</span><b>${Money.fmt(total / 7, false)}</b>${limit ? `<small>${over} day${over === 1 ? '' : 's'} over limit</small>` : ''}</div>
       ${total > 0 ? `<div class="tile"><span>Paid with</span><b class="small">${U.esc(Money.methodLine(m))}</b></div>` : ''}
     </div>
     <ul class="missedlist">${cats.slice(0, 3).map(c =>
-      `<li><span>${U.esc(Money.catLabel(c.id))}</span><b>${U.money(c.usd, false)}</b></li>`).join('')}</ul>`;
+      `<li><span>${U.esc(Money.catLabel(c.id))}</span><b>${Money.fmt(c.usd, false)}</b></li>`).join('')}</ul>`;
 }
 
 function openReview(from, to) {
@@ -1371,6 +1383,7 @@ function openSettings() {
   f.token.value = c.token;
   f.lossLimit.value = U.num(Store.settings().lossLimit) > 0 ? Store.settings().lossLimit : '';
   f.theme.value = lsGet('dt.theme', 'dark');
+  f.moneyCur.value = Money.nz() ? 'nzd' : 'usd';
   renderSyncInfo();
   $('#settingsDlg').showModal();
 }
@@ -1609,6 +1622,9 @@ document.addEventListener('change', async e => {
     el.value = '';
   } else if (el.name === 'theme') {
     lsSet('dt.theme', el.value); applyTheme(el.value);
+  } else if (el.name === 'moneyCur') {
+    lsSet('dt.moneyCur', el.value); render();
+    toast(el.value === 'nzd' ? 'Money now in NZ$' : 'Money now in US$ + riel');
   } else if (el.dataset.pair) {
     editPair(el);
   } else if (el.dataset.cat) {

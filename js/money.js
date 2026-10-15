@@ -1,7 +1,8 @@
 'use strict';
 
-// Spending tracker. Each expense keeps the amount and currency as typed;
-// totals are always in dollars, with riel converted at a fixed rate.
+// Spending tracker. Each expense keeps the amount and currency as typed.
+// Totals are in US dollars (riel converted at a fixed rate), or in NZ dollars
+// when this device's money currency is set to NZ$.
 
 const KHR_PER_USD = 4100;
 
@@ -24,6 +25,18 @@ const METHODS = { cash: '💵 Cash', aba: '🏦 Bank', card: '💳 Card' };
 const methodOf = m => (METHODS[m] ? m : 'cash');
 
 const Money = {
+  // Money currency for this device: 'usd' (US$ + riel) or 'nzd'.
+  nz() {
+    try { return localStorage.getItem('dt.moneyCur') === 'nzd'; } catch (e) { return false; }
+  },
+
+  // Like U.money, with NZ$ in place of $ in NZ$ mode.
+  fmt(n, signed = true) {
+    const s = U.money(n, signed);
+    return Money.nz() ? s.replace('$', 'NZ$') : s;
+  },
+
+  // Amount in the home currency (US$, or NZ$ in NZ$ mode).
   usd(e) {
     const v = U.num(e.amount);
     if (!isFinite(v)) return 0;
@@ -34,7 +47,7 @@ const Money = {
   // like "2,50" where the comma is the decimal point.
   parse(str, cur) {
     let s = String(str || '').trim().replace(/\s/g, '');
-    if (cur === 'USD' && /^\d+,\d{1,2}$/.test(s)) s = s.replace(',', '.');
+    if (cur !== 'KHR' && /^\d+,\d{1,2}$/.test(s)) s = s.replace(',', '.');
     else s = s.replace(/,/g, '');
     return parseFloat(s);
   },
@@ -43,17 +56,19 @@ const Money = {
     return `${Math.round(n).toLocaleString('en-US')}៛`;
   },
 
-  // How the amount was typed: "$2.50" or "10,000៛".
+  // How the amount was typed: "$2.50", "NZ$2.50" or "10,000៛".
   fmtOrig(e) {
     const v = U.num(e.amount);
-    return e.cur === 'KHR' ? Money.fmtKHR(v) : U.money(v, false);
+    return e.cur === 'KHR' ? Money.fmtKHR(v) : Money.fmt(v, false);
   },
 
-  // Short dollar amount for calendar cells: $8, $12.5, $1.2k
+  // Short dollar amount for calendar cells: $8, $12.5, $1.2k (NZ$8 in NZ$ mode)
   short(n) {
     if (!(n > 0)) return '';
-    if (n >= 1000) return '$' + (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k';
-    return '$' + (n >= 100 ? Math.round(n) : Math.round(n * 10) / 10);
+    const sign = Money.nz() ? 'NZ$' : '$';
+    if (n >= 1000) return sign + (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k';
+    // Whole NZ dollars, so "NZ$" still fits in a small day cell.
+    return sign + (n >= 100 || Money.nz() ? Math.round(n) : Math.round(n * 10) / 10);
   },
 
   cats() {
@@ -103,7 +118,7 @@ const Money = {
 
   // "💵 Cash $5 · 💳 Card $12", leaving out methods with nothing spent.
   methodLine(m) {
-    return Object.keys(METHODS).filter(k => m[k] > 0).map(k => `${METHODS[k]} ${U.money(m[k], false)}`).join(' · ');
+    return Object.keys(METHODS).filter(k => m[k] > 0).map(k => `${METHODS[k]} ${Money.fmt(m[k], false)}`).join(' · ');
   },
 
   // date -> $ spent
