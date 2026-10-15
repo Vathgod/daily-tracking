@@ -153,3 +153,33 @@ body[data-tab="money"] .statrow { border-top-color: var(--c-money); }
 .trade[style] .pair { color: var(--pc); }
 .tbl .dot[style] { background: var(--pc); }
 #pairPick input:checked + span { background: var(--pc, var(--accent)); color: #fff; }
+
+/* ---------- Money stats ---------- */
+:root { --m-ok: #059669; --m-over: #dc2626; --pm-cash: #16a34a; --pm-aba: #0e5a8a; --pm-card: #7c3aed; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --m-ok: #34d399; --m-over: #ff5f5f; --pm-cash: #16a34a; --pm-aba: #2b7bc4; --pm-card: #9061f0; }
+}
+:root[data-theme="dark"] { --m-ok: #34d399; --m-over: #ff5f5f; --pm-cash: #16a34a; --pm-aba: #2b7bc4; --pm-card: #9061f0; }
+
+.mcompare { border-top: 3px solid var(--c-money); display: grid; gap: 6px; }
+.mcompare p { margin: 0; }
+.mcompare .big { font-size: 30px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.mbars { height: 160px; }
+.mbars.wd { height: 130px; }
+.mbars .btrack { overflow: visible; }
+.mbars i.m-ok { background: var(--m-ok); }
+.mbars i.m-over { background: var(--m-over); }
+.mbars i.m-now { background: repeating-linear-gradient(45deg, var(--m-ok) 0 4px, color-mix(in srgb, var(--m-ok) 45%, transparent) 4px 8px); }
+.mbars i.m-top { box-shadow: 0 0 10px -2px var(--m-ok); }
+.mbars .m-budget { position: absolute; left: 4%; right: 4%; height: 0; border-top: 2px dashed var(--text); opacity: .7; }
+.legend i.m-ok { background: var(--m-ok); }
+.legend i.m-over { background: var(--m-over); }
+.legend i.m-now { background: repeating-linear-gradient(45deg, var(--m-ok) 0 3px, color-mix(in srgb, var(--m-ok) 45%, transparent) 3px 6px); }
+.legend i.m-budget { height: 0; border-top: 2px dashed var(--text); border-radius: 0; opacity: .7; }
+.catbreak .bar.over i { background: var(--m-over); }
+.mstack { display: flex; gap: 2px; height: 14px; border-radius: 99px; overflow: hidden; margin: 4px 0 10px; }
+.mstack i, .mlegend i { background: var(--pm-cash); }
+.mstack i.pm-aba, .mlegend i.pm-aba { background: var(--pm-aba); }
+.mstack i.pm-card, .mlegend i.pm-card { background: var(--pm-card); }
+.mlegend li > span { display: inline-flex; align-items: center; gap: 8px; }
+.mlegend i { width: 10px; height: 10px; border-radius: 3px; }

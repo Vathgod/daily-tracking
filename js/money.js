@@ -173,6 +173,42 @@ const Money = {
     return [...s].sort().reverse();
   },
 
+  // Money stats look at the last `n` spending weeks, this week included.
+  // "Done" weeks are the finished ones that have money set or spending.
+  trend(n = 8) {
+    const cur = Money.weekStart(U.today());
+    const weeks = [];
+    for (let i = n - 1; i >= 0; i--) weeks.push(Money.week(U.addDays(cur, -7 * i)));
+    const now = weeks[weeks.length - 1];
+    const done = weeks.slice(0, -1).filter(w => w.a || w.list.length);
+    const budgeted = done.filter(w => w.a);
+    const avg = done.length ? done.reduce((a, w) => a + w.spent, 0) / done.length : NaN;
+    const byLeft = [...budgeted].sort((a, b) => b.left - a.left);
+    const bySpent = [...done].sort((a, b) => a.spent - b.spent);
+    return {
+      weeks, now, done, avg,
+      last: weeks[weeks.length - 2],
+      best: byLeft[0] || bySpent[0] || null,
+      worst: byLeft[byLeft.length - 1] || bySpent[bySpent.length - 1] || null,
+      saved: budgeted.reduce((a, w) => a + w.left, 0),
+      over: budgeted.filter(w => w.left < 0).length,
+      budgeted: budgeted.length,
+    };
+  },
+
+  // Spent from Sunday up to the same weekday as today, in the week starting `ws`.
+  soFar(ws) {
+    const days = (U.weekdayMon(U.today()) + 1) % 7;
+    return Money.total(Money.list(ws, U.addDays(ws, days)));
+  },
+
+  // Average spent on each weekday (Sun..Sat) over the given weeks.
+  byWeekday(weeks) {
+    const t = [0, 0, 0, 0, 0, 0, 0];
+    for (const w of weeks) for (const e of w.list) t[(U.weekdayMon(e.date) + 1) % 7] += Money.usd(e);
+    return t.map(v => (weeks.length ? v / weeks.length : 0));
+  },
+
   // The week's money is meant for 5 spending days, so the daily limit is a fifth of it.
   dailyBudget(date) {
     const a = Money.allowance(Money.weekStart(date));

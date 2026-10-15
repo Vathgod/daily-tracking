@@ -1278,9 +1278,153 @@ function viewActivities(from, to) {
     <button type="button" class="btn ghost block" data-act="lastWeek">📋 Last week's review</button>`;
 }
 
+// ---------- Money stats ----------
+
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+// "▲ $5.00 more" / "▼ $5.00 less" / "same"
+function moneyDiff(d, what) {
+  if (!isFinite(d)) return '';
+  if (Math.abs(d) < 0.005) return `<span class="muted">same as ${what}</span>`;
+  return `<b class="${d > 0 ? 'neg' : 'pos'}">${d > 0 ? '▲' : '▼'} ${Money.fmt(Math.abs(d), false)} ${d > 0 ? 'more' : 'less'}</b> than ${what}`;
+}
+
+// 2. This week so far, against last week by the same day and an average week.
+function moneyCompare(t) {
+  const today = U.today();
+  const dayName = U.fmtDate(today, { weekday: 'long' });
+  const lastSoFar = Money.soFar(t.last.ws);
+  const hasLast = t.last.a || t.last.list.length;
+  return `<div class="card mcompare">
+    <div class="row"><b>👛 This week so far</b><span class="muted small">${U.esc(Money.weekLabel(t.now.ws))}</span></div>
+    <div class="big">${Money.fmt(t.now.spent, false)}</div>
+    <p class="small">${hasLast ? `${moneyDiff(t.now.spent - lastSoFar, `last week by ${U.esc(dayName)}`)} <span class="muted">(${Money.fmt(lastSoFar, false)})</span>` : '<span class="muted">Nothing tracked last week to compare with.</span>'}</p>
+    <div class="w-stats">
+      <div><span>Last week</span><b>${hasLast ? Money.fmt(t.last.spent, false) : '–'}</b></div>
+      <div><span>Avg week</span><b>${Money.fmt(t.avg, false)}</b></div>
+      <div><span>Week's money</span><b>${t.now.a ? Money.fmtOrig(t.now.a) : '–'}</b></div>
+    </div>
+  </div>`;
+}
+
+// 1. Spent per week with that week's money as a marker.
+function moneyWeekChart(t) {
+  // Headroom so the week's-money line stays clear of the value labels.
+  const top = 1.12 * Math.max(1, ...t.weeks.map(w => Math.max(w.spent, w.a ? w.got : 0)));
+  return `<div class="card">
+    <h4 class="sub">Spent each week</h4>
+    <div class="bars few mbars" role="img" aria-label="Money spent in each of the last 8 weeks">
+      ${t.weeks.map(w => {
+        const now = w === t.now;
+        const over = w.a && w.left < 0;
+        const tip = `${Money.weekLabel(w.ws)}: spent ${Money.fmt(w.spent, false)}${w.a ? ` of ${Money.fmtOrig(w.a)} · ${over ? Money.fmt(-w.left, false) + ' over' : Money.fmt(w.left, false) + ' left'}` : ' · no money set'}${now ? ' · this week, in progress' : ''}`;
+        return `<button type="button" class="bcol" data-act="barTip" data-tip="${U.esc(tip)}" title="${U.esc(tip)}">
+          <span class="bl">${w.spent > 0 ? Money.short(w.spent) : ''}</span>
+          <span class="btrack">${w.spent > 0 ? `<i class="${now ? 'm-now' : over ? 'm-over' : 'm-ok'}" style="height:${Math.max(2, w.spent / top * 100)}%"></i>` : ''}${w.a ? `<b class="m-budget" style="bottom:${w.got / top * 100}%"></b>` : ''}</span>
+          <span class="bx${now ? ' now' : ''}">${U.fmtDate(w.ws, { day: 'numeric', month: 'short' })}</span></button>`;
+      }).join('')}
+    </div>
+    <div class="legend"><span><i class="m-ok"></i>Within budget</span><span><i class="m-over"></i>Over budget</span><span><i class="m-now"></i>This week</span><span><i class="m-budget"></i>Week's money</span></div>
+  </div>`;
+}
+
+// 3. Finished weeks in the window.
+function moneyTiles(t) {
+  const tile = (label, val, cls = '', sub = '') =>
+    `<div class="tile"><span>${label}</span><b class="${cls}">${val}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
+  const wk = w => U.fmtDate(w.ws, { day: 'numeric', month: 'short' });
+  const res = w => (w.a ? (w.left < 0 ? `${Money.fmt(-w.left, false)} over` : `${Money.fmt(w.left, false)} left`) : `${Money.fmt(w.spent, false)} spent`);
+  return `<div class="tiles">
+    ${tile('Avg week', Money.fmt(t.avg, false), '', `${t.done.length} finished week${t.done.length === 1 ? '' : 's'}`)}
+    ${tile('Saved in total', t.budgeted ? Money.fmt(t.saved) : '–', t.budgeted ? U.cls(t.saved) : '', 'left over, all weeks added up')}
+    ${tile('Best week', t.best ? wk(t.best) : '–', t.best && t.best.a ? U.cls(t.best.left) : '', t.best ? res(t.best) : '')}
+    ${tile('Worst week', t.worst ? wk(t.worst) : '–', t.worst && t.worst.a ? U.cls(t.worst.left) : '', t.worst ? res(t.worst) : '')}
+    ${tile('Weeks over budget', t.budgeted ? `${t.over} of ${t.budgeted}` : '–', t.over ? 'neg' : t.budgeted ? 'pos' : '')}
+  </div>`;
+}
+
+// 4. Each category this week so far, against its usual full week.
+function moneyCatCompare(t) {
+  const usual = {};
+  for (const w of t.done) for (const r of Money.byCat(w.list)) usual[r.id] = (usual[r.id] || 0) + r.usd / t.done.length;
+  const now = Object.fromEntries(Money.byCat(t.now.list).map(r => [r.id, r.usd]));
+  const ids = [...new Set([...Object.keys(now), ...Object.keys(usual)])]
+    .sort((a, b) => (now[b] || 0) - (now[a] || 0) || (usual[b] || 0) - (usual[a] || 0)).slice(0, 8);
+  if (!ids.length) return '';
+  return `<div class="card catbreak">
+    <h4 class="sub">Categories: this week vs usual week</h4>
+    ${ids.map(id => {
+      const n = now[id] || 0, u = usual[id] || 0;
+      const over = u > 0 ? n > u : n > 0 && t.done.length > 0;
+      return `<div class="cb-row">
+        <div class="row small"><span>${U.esc(Money.catLabel(id))}</span>
+          <span><b>${Money.fmt(n, false)}</b> <span class="muted">/ usual ${t.done.length ? Money.fmt(u, false) : '–'}</span></span></div>
+        <div class="bar${over ? ' over' : ''}"><i style="width:${u > 0 ? Math.min(100, n / u * 100) : n > 0 ? 100 : 0}%"></i></div>
+      </div>`;
+    }).join('')}
+    <p class="muted small">Usual = average per finished week. Red means you already spent more than usual.</p>
+  </div>`;
+}
+
+// 5. Average spent on each day of the week.
+function moneyWeekdays(t) {
+  if (!t.done.length) return '';
+  const avg = Money.byWeekday(t.done);
+  const top = Math.max(...avg);
+  if (!(top > 0)) return '';
+  const most = avg.indexOf(top);
+  return `<div class="card">
+    <h4 class="sub">Average by day of the week</h4>
+    <div class="bars few mbars wd" role="img" aria-label="Average spent on each day of the week">
+      ${avg.map((v, i) => {
+        const tip = `${WEEKDAYS[i]}: ${Money.fmt(v, false)} on average`;
+        return `<button type="button" class="bcol" data-act="barTip" data-tip="${U.esc(tip)}" title="${U.esc(tip)}">
+          <span class="bl">${i === most ? Money.short(v) : ''}</span>
+          <span class="btrack">${v > 0 ? `<i class="m-ok${i === most ? ' m-top' : ''}" style="height:${Math.max(2, v / top * 100)}%"></i>` : ''}</span>
+          <span class="bx${i === most ? ' now' : ''}">${WEEKDAYS[i]}</span></button>`;
+      }).join('')}
+    </div>
+    <p class="small">You spend the most on <b>${WEEKDAYS[most]}</b> (${Money.fmt(top, false)} on average).</p>
+  </div>`;
+}
+
+// 6. Cash / Bank / Card over the whole window.
+function moneyMethods(t) {
+  const list = t.weeks.flatMap(w => w.list);
+  const m = Money.byMethod(list);
+  const total = Money.total(list);
+  if (!(total > 0)) return '';
+  const keys = Object.keys(METHODS).filter(k => m[k] > 0);
+  return `<div class="card">
+    <h4 class="sub">Paid with</h4>
+    <div class="mstack" role="img" aria-label="Share of spending by payment method">
+      ${keys.map(k => `<i class="pm-${k}" style="flex:${m[k]}" title="${U.esc(METHODS[k])}"></i>`).join('')}
+    </div>
+    <ul class="missedlist mlegend">${keys.map(k =>
+      `<li><span><i class="pm-${k}"></i>${U.esc(METHODS[k])}</span><b>${Money.fmt(m[k], false)} <span class="muted">${Math.round(m[k] / total * 100)}%</span></b></li>`).join('')}</ul>
+  </div>`;
+}
+
+function viewMoneyStats() {
+  const t = Money.trend(8);
+  if (!t.done.length && !t.now.a && !t.now.list.length) {
+    return '<p class="empty">No spending yet. Add your week\'s money and expenses in the Money tab, and your weekly stats show up here.</p>';
+  }
+  return `<p class="muted small">Last 8 weeks, Sunday to Saturday.</p>
+    ${moneyCompare(t)}
+    ${moneyWeekChart(t)}
+    ${moneyTiles(t)}
+    ${moneyCatCompare(t)}
+    ${moneyWeekdays(t)}
+    ${moneyMethods(t)}`;
+}
+
 function viewStats() {
   const [from, to] = rangeDates(ui.statsRange, ui.statsFrom, ui.statsTo);
-  const head = `${chips('statsSection', ui.statsSection, [['trading', '📈 Trading'], ['activities', '☑ Activities']])}
+  const sections = chips('statsSection', ui.statsSection, [['trading', '📈 Trading'], ['activities', '☑ Activities'], ['money', '💰 Money']]);
+  // Money stats always look at the last 8 weeks, so they skip the range chips.
+  if (ui.statsSection === 'money') return `<section class="view">${sections}${viewMoneyStats()}</section>`;
+  const head = `${sections}
     ${chips('statsRange', ui.statsRange, [['week', 'Week'], ['month', 'Month'], ['all', 'All'], ['custom', 'Custom']])}
     ${ui.statsRange === 'custom' ? `<div class="grid2">
         <label class="field"><span>From</span><input type="date" id="statsFrom" value="${ui.statsFrom}"></label>

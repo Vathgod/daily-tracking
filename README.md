@@ -6,7 +6,7 @@ A phone-first web app for planning your day and tracking trades. Install it on y
 - **Trades**: log trades on your own list of pairs (starts with NAS100, XAUUSD and EURUSD; add, rename or hide pairs, each with its $ per point for 1.00 lot). Points/pips, RR, session (Asia / London / London-NY overlap / New York, in Cambodia time) and Win/Loss are calculated for you. Includes a daily loss limit warning.
 - **Money**: each week (Sunday to Saturday) enter the money you have to spend, then log what you spend in riel (៛) or dollars, with a category (add, rename or delete your own) and Cash, Bank or Card. See how much is left in your wallet, today's spending against the daily limit (the week's money ÷ 5), where your money went, and a history of past weeks. Use the ‹ › arrows on the wallet to go back and set the money for any past week; on Sunday and Monday a recap shows what you spent last week. Totals are in dollars at 4,100៛ = $1, or pick **NZ$** in Settings to track money in New Zealand dollars.
 - **Calendar**: each day colored green or red by PnL, plus how many activities you finished. Switch to **Money** to see how much you spent each day.
-- **Stats**: win rate, average RR, profit factor, and breakdowns by pair, session and side.
+- **Stats**: win rate, average RR, profit factor, and breakdowns by pair, session and side. The **Money** section compares your last 8 weeks: spent per week against the week's money, this week against last week, best and worst weeks, categories against a usual week, spending by day of the week, and Cash / Bank / Card.
 
 ## Where the data lives
 
