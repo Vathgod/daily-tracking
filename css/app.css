@@ -194,7 +194,16 @@ main { max-width: 640px; margin: 0 auto; padding: 14px 16px 24px; }
 .text small { display: block; color: var(--muted); font-size: 12px; }
 .task.done .text { text-decoration: line-through; color: var(--muted); }
 .task .del { font-size: 20px; min-width: 32px; min-height: 32px; color: var(--muted); opacity: .5; }
-.task .del:hover, .task .del:focus-visible { opacity: 1; }
+.task .edit { font-size: 14px; min-width: 32px; min-height: 32px; opacity: .45; filter: grayscale(1); }
+.task .del:hover, .task .del:focus-visible, .task .edit:hover, .task .edit:focus-visible { opacity: 1; filter: none; }
+.task.editing { padding: 6px; }
+.editrow { flex: 1; display: flex; gap: 6px; align-items: center; min-width: 0; }
+.editrow input {
+  flex: 1; min-width: 0; border: 1px solid var(--accent); background: var(--surface-2);
+  border-radius: 10px; padding: 8px 10px; outline: none;
+}
+.editrow .mini { padding: 8px 10px; }
+.editrow .save { background: var(--accent); color: var(--accent-text); }
 
 /* ---------- Plan layout ---------- */
 .planhead { display: grid; grid-template-columns: auto 1fr; gap: 10px 14px; align-items: center; }
@@ -242,6 +251,11 @@ body[data-tab="plan"] .toast { bottom: calc(var(--tabbar-h, 64px) + 72px); }
 }
 .addfield:focus-within { outline: 2px solid var(--accent); outline-offset: -1px; }
 .addrow .addfield input, .addrow .addfield input:focus { flex: 1; border: 0; background: none; outline: none; }
+.addclear {
+  flex: none; display: grid; place-items: center; width: 26px; height: 26px; margin-right: 2px; padding: 0;
+  border: 0; border-radius: 50%; background: var(--surface-2); color: var(--muted); font-size: 17px; line-height: 1;
+}
+.addfield input:placeholder-shown + .addclear { display: none; }
 .addbtn { flex: none; width: 46px; padding: 0; font-size: 24px; line-height: 1; }
 .dailytog { flex: none; display: flex; }
 .dailytog input { position: absolute; opacity: 0; width: 1px; height: 1px; }

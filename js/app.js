@@ -27,6 +27,7 @@ const ui = {
   doneOpen: false,
   missedOpen: false,
   manageOpen: false,
+  editing: null, // id of the activity being renamed
 };
 
 // ---------- Helpers ----------
@@ -97,6 +98,13 @@ function toast(msg) {
 // ---------- Plan ----------
 
 function taskRow(t, today, { showDate = false, tag = false } = {}) {
+  if (ui.editing === t.id) {
+    return `<li class="task editing"><form class="editrow" data-id="${t.id}" autocomplete="off">
+      <input id="editInput" value="${U.esc(t.text)}" maxlength="200" enterkeyhint="done" aria-label="Activity">
+      <button type="submit" class="mini save">Save</button>
+      <button type="button" class="mini" data-act="cancelEdit">Cancel</button>
+    </form></li>`;
+  }
   const missed = isMissed(t, today);
   let tail = '';
   if (missed && t.movedTo) {
@@ -110,6 +118,7 @@ function taskRow(t, today, { showDate = false, tag = false } = {}) {
     <label class="check"><input type="checkbox" data-act="toggleTask" data-id="${t.id}"${t.done ? ' checked' : ''}><span class="box" aria-hidden="true"></span>
       <span class="text">${U.esc(t.text)}${tag && t.routine ? ' <span class="badge daily">🔁</span>' : ''}${showDate ? `<small>${U.esc(U.fmtDate(t.date, { weekday: 'short', day: 'numeric', month: 'short' }))}</small>` : ''}</span></label>
     ${tail}
+    <button type="button" class="icon edit" data-act="editTask" data-id="${t.id}" aria-label="Edit">✏️</button>
     <button type="button" class="icon del" data-act="delTask" data-id="${t.id}" aria-label="Delete">×</button>
   </li>`;
 }
@@ -143,7 +152,7 @@ function viewPlan() {
       <div class="ph-main">
         <div class="datebar">
           <button type="button" class="icon nav" data-act="planShift" data-v="-1" aria-label="Previous day">‹</button>
-          <label class="datepick"><span>${U.esc(U.dayLabel(d))}</span><input type="date" id="planDate" value="${d}" aria-label="Pick a date"></label>
+          <label class="datepick"><span>${U.esc(U.fmtDate(d, { weekday: 'short', day: 'numeric', month: 'short', ...(d.slice(0, 4) !== today.slice(0, 4) && { year: 'numeric' }) }))}</span><input type="date" id="planDate" value="${d}" aria-label="Pick a date"></label>
           <button type="button" class="icon nav" data-act="planShift" data-v="1" aria-label="Next day">›</button>
         </div>
         <div class="ph-count">${tasks.length ? `<b>${done.length}/${tasks.length}</b> done${band}` : '<span class="muted">No activities yet</span>'}</div>
@@ -180,11 +189,31 @@ function viewPlan() {
     <form id="taskForm" class="addrow dock" autocomplete="off">
       <div class="addfield">
         <input id="taskInput" placeholder="${ui.dailyOn ? 'Add a daily activity…' : 'Add an activity…'}" maxlength="200" enterkeyhint="done">
+        <button type="button" class="addclear" data-act="clearTask" aria-label="Clear">×</button>
         <label class="dailytog" title="Repeat every day"><input type="checkbox" id="taskDaily" aria-label="Repeat every day"${ui.dailyOn ? ' checked' : ''}><span>🔁</span></label>
       </div>
       <button class="btn primary addbtn" type="submit" aria-label="Add">+</button>
     </form>
   </section>`;
+}
+
+// Renaming a daily activity renames it from today on; past days keep the old name.
+function saveEdit(id, text) {
+  const t = Store.get('tasks', id);
+  if (!text) return toast('Type a name, or tap Cancel.');
+  ui.editing = null;
+  if (!t || t.deleted || text === t.text) return render();
+  const today = U.today();
+  const r = t.routine && Store.get('routines', t.routine);
+  if (r && !r.deleted && t.date >= today) {
+    Store.upsert('routines', { ...r, text });
+    for (const x of Store.list('tasks')) {
+      if (x.routine === r.id && x.date >= today) Store.upsert('tasks', { ...x, text });
+    }
+    toast('Renamed for today and every day after');
+  } else {
+    Store.upsert('tasks', { ...t, text });
+  }
 }
 
 function emptyDay(d, today) {
@@ -1710,12 +1739,19 @@ function render() {
   fillRoutines();
   const draft = $('#taskInput') ? $('#taskInput').value : '';
   const hadFocus = document.activeElement && document.activeElement.id === 'taskInput';
+  const editDraft = $('#editInput') && $('#editInput').closest('form').dataset.id === ui.editing ? $('#editInput').value : null;
   $('#view').innerHTML = VIEWS[ui.tab]();
   document.body.dataset.tab = ui.tab;
   for (const b of $$('.tabbar button')) b.classList.toggle('on', b.dataset.v === ui.tab);
   renderHeader();
   const ti = $('#taskInput');
   if (ti && draft) { ti.value = draft; if (hadFocus) ti.focus(); }
+  const ei = $('#editInput');
+  if (ei) {
+    if (editDraft !== null) ei.value = editDraft;
+    ei.focus();
+    ei.setSelectionRange(ei.value.length, ei.value.length);
+  }
 }
 
 // ---------- Theme ----------
@@ -1743,6 +1779,9 @@ It will still come back on other days. To stop it for good, tap ⚙ Manage in th
       : `Delete "${t.text}"?`;
     if (confirm(msg)) Store.remove('tasks', t.id);
   },
+  editTask(el) { ui.editing = el.dataset.id; render(); },
+  cancelEdit() { ui.editing = null; render(); },
+  clearTask() { const i = $('#taskInput'); i.value = ''; i.focus(); },
   toggleDone() { ui.doneOpen = !ui.doneOpen; render(); },
   toggleMissed() { ui.missedOpen = !ui.missedOpen; render(); },
   toggleManage() { ui.manageOpen = !ui.manageOpen; render(); },
@@ -1978,6 +2017,9 @@ document.addEventListener('submit', e => {
     }
     input.value = '';
     $('#taskInput').focus();
+  } else if (e.target.classList.contains('editrow')) {
+    e.preventDefault();
+    saveEdit(e.target.dataset.id, $('#editInput').value.trim());
   } else if (e.target.id === 'tradeForm') {
     e.preventDefault();
     saveTrade();
@@ -1996,6 +2038,10 @@ document.addEventListener('submit', e => {
 });
 
 // Enter in the "new category" boxes adds it; in a rename box it saves the field.
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && e.target.id === 'editInput') { ui.editing = null; render(); }
+});
+
 $('#catForm').addEventListener('keydown', e => {
   if (e.key !== 'Enter' || e.target.tagName !== 'INPUT') return;
   e.preventDefault();
