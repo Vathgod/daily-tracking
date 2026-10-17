@@ -38,7 +38,7 @@ const Store = (() => {
   const LS_STATE = 'dt.state';
   const LS_CFG = 'dt.config';
   const DATA_PATH = 'data.json';
-  const KINDS = ['tasks', 'trades', 'accounts', 'expenses', 'categories', 'allowances', 'pairs'];
+  const KINDS = ['tasks', 'trades', 'accounts', 'expenses', 'categories', 'allowances', 'pairs', 'routines'];
 
   let state = blank();
   const cfg = { owner: '', repo: 'daily-tracking-data', token: '' };
@@ -51,7 +51,7 @@ const Store = (() => {
   const shotUrls = new Map();
 
   function blank() {
-    return { tasks: {}, trades: {}, accounts: {}, expenses: {}, categories: {}, allowances: {}, pairs: {}, settings: { lossLimit: 0, updatedAt: 0 } };
+    return { tasks: {}, trades: {}, accounts: {}, expenses: {}, categories: {}, allowances: {}, pairs: {}, routines: {}, settings: { lossLimit: 0, updatedAt: 0 } };
   }
 
   function normalize(o) {
@@ -69,6 +69,7 @@ const Store = (() => {
       put(s.categories, o.categories);
       put(s.allowances, o.allowances);
       put(s.pairs, o.pairs);
+      put(s.routines, o.routines);
       if (o.settings) s.settings = { ...s.settings, ...o.settings };
     }
     return s;
@@ -86,6 +87,7 @@ const Store = (() => {
       categories: Object.values(s.categories).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)),
       allowances: Object.values(s.allowances).sort((a, b) => a.id.localeCompare(b.id)),
       pairs: Object.values(s.pairs).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)),
+      routines: Object.values(s.routines).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)),
     };
   }
 
@@ -142,6 +144,14 @@ const Store = (() => {
     emit();
     scheduleSync();
     return item;
+  }
+
+  // Adds items without stamping a new updatedAt or redrawing the page.
+  // Used for activities filled in automatically, so any real edit wins a merge.
+  function addQuiet(kind, items) {
+    for (const it of items) state[kind][it.id] = it;
+    persist();
+    scheduleSync();
   }
 
   function remove(kind, id) {
@@ -402,7 +412,7 @@ const Store = (() => {
   }
 
   return {
-    load, list, upsert, remove, setSettings, syncNow, testConnection, setConfig,
+    load, list, upsert, addQuiet, remove, setSettings, syncNow, testConnection, setConfig,
     saveShot, shotUrl, deleteShot, exportJSON, importJSON,
     get: (kind, id) => state[kind][id],
     settings: () => state.settings,

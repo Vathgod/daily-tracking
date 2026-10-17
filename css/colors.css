@@ -58,14 +58,14 @@ body[data-tab="stats"] { --tab: var(--pink); }
 .tabbar button.on svg { background: color-mix(in srgb, currentColor 18%, transparent); }
 
 /* Plan */
-.progress { border-top: 3px solid var(--violet); }
+.progress, .planhead { border-top: 3px solid var(--violet); }
 .bar i { background: linear-gradient(90deg, #22c55e, #10b981, #06b6d4); }
 .task { border-left: 4px solid var(--violet); }
 .task.done { border-left-color: var(--pos); }
 .task.missed { border-left-color: var(--neg); }
 .box { border-color: var(--violet); }
 .check input:checked + .box { background: linear-gradient(135deg, #22c55e, #10b981); border-color: transparent; }
-.addrow input { border-color: color-mix(in srgb, var(--violet) 35%, var(--border)); }
+.addrow input, .addfield { border-color: color-mix(in srgb, var(--violet) 35%, var(--border)); }
 
 /* Today's PnL card */
 .hero { border-color: transparent; background: linear-gradient(135deg, color-mix(in srgb, var(--violet) 30%, var(--surface)), color-mix(in srgb, var(--blue) 22%, var(--surface))); }

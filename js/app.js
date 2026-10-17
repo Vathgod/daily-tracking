@@ -23,6 +23,10 @@ const ui = {
   weekOpen: null,
   walletWs: null, // Sunday of the week shown on the wallet card (null = this week)
   acct: lsGet('dt.acct', 'all'),
+  dailyOn: false,
+  doneOpen: false,
+  missedOpen: false,
+  manageOpen: false,
 };
 
 // ---------- Helpers ----------
@@ -44,6 +48,30 @@ function tradesIn(from, to, pair = 'all', acct = ui.acct) {
 
 function tasksOn(date) {
   return Store.list('tasks').filter(t => t.date === date).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+}
+
+// Daily activities: each one puts a task on today (and on the plan day being
+// looked at, if it's later). The task id is fixed per routine and day, so two
+// devices never make two copies, and deleting one day's task doesn't bring it back.
+function routineTaskId(rid, date) { return `r-${rid}-${date}`; }
+
+function routines() {
+  return Store.list('routines').sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+}
+
+function fillRoutines() {
+  const today = U.today();
+  const dates = [today];
+  if (ui.planDate > today) dates.push(ui.planDate);
+  const add = [];
+  for (const r of routines()) {
+    for (const d of dates) {
+      const id = routineTaskId(r.id, d);
+      if (d < r.start || Store.get('tasks', id)) continue;
+      add.push({ id, text: r.text, date: d, done: false, routine: r.id, createdAt: r.createdAt, updatedAt: 1 });
+    }
+  }
+  if (add.length) Store.addQuiet('tasks', add);
 }
 
 function sumPnl(trades) { return trades.reduce((s, t) => s + (U.num(t.pnl) || 0), 0); }
@@ -68,63 +96,135 @@ function toast(msg) {
 
 // ---------- Plan ----------
 
-function taskRow(t, today, { showDate = false } = {}) {
+function taskRow(t, today, { showDate = false, tag = false } = {}) {
   const missed = isMissed(t, today);
   let tail = '';
   if (missed && t.movedTo) {
     tail = `<span class="badge muted">Moved → ${U.esc(U.fmtDate(t.movedTo, { day: 'numeric', month: 'short' }))}</span>`;
+  } else if (missed && t.routine) {
+    tail = `<span class="badge red">Missed</span>`;
   } else if (missed) {
     tail = `<span class="badge red">Missed</span><button type="button" class="mini" data-act="moveToday" data-id="${t.id}">→ Today</button>`;
   }
   return `<li class="task${t.done ? ' done' : ''}${missed ? ' missed' : ''}">
     <label class="check"><input type="checkbox" data-act="toggleTask" data-id="${t.id}"${t.done ? ' checked' : ''}><span class="box" aria-hidden="true"></span>
-      <span class="text">${U.esc(t.text)}${showDate ? `<small>${U.esc(U.fmtDate(t.date, { weekday: 'short', day: 'numeric', month: 'short' }))}</small>` : ''}</span></label>
+      <span class="text">${U.esc(t.text)}${tag && t.routine ? ' <span class="badge daily">🔁</span>' : ''}${showDate ? `<small>${U.esc(U.fmtDate(t.date, { weekday: 'short', day: 'numeric', month: 'short' }))}</small>` : ''}</span></label>
     ${tail}
     <button type="button" class="icon del" data-act="delTask" data-id="${t.id}" aria-label="Delete">×</button>
   </li>`;
 }
 
+function taskList(list, today, opt) {
+  return `<ul class="tasks">${list.map(t => taskRow(t, today, opt)).join('')}</ul>`;
+}
+
 function viewPlan() {
   const today = U.today();
+  const tomorrow = U.addDays(today, 1);
   const d = ui.planDate;
   const tasks = tasksOn(d);
-  const done = tasks.filter(t => t.done).length;
-  const pct = tasks.length ? Math.round(done / tasks.length * 100) : 0;
+  const done = tasks.filter(t => t.done);
+  const pct = tasks.length ? Math.round(done.length / tasks.length * 100) : 0;
+  const daily = tasks.filter(t => t.routine && !t.done);
+  const other = tasks.filter(t => !t.routine && !t.done);
   const missedEarlier = d === today
-    ? Store.list('tasks').filter(t => isMissed(t, today) && !t.movedTo).sort((a, b) => b.date.localeCompare(a.date))
+    ? Store.list('tasks').filter(t => isMissed(t, today) && !t.movedTo && !t.routine).sort((a, b) => b.date.localeCompare(a.date))
     : [];
-  const hint = d === U.addDays(today, 1) ? 'Planning tomorrow. Write what you will do.'
+  const hint = d === tomorrow ? 'Planning tomorrow. Write what you will do.'
     : d < today ? 'Looking back. Unticked activities are marked missed.' : '';
+  const band = d < today && tasks.length ? ` · <span class="band b-${Perf.band(pct)}">${Perf.bandLabel(Perf.band(pct))}</span>`
+    : tasks.length && pct === 100 ? ' · <span class="band b-perfect">🎉 Perfect</span>' : '';
+  const showDaily = daily.length || routines().length;
+  const otherLabel = d === today ? 'Today' : d === tomorrow ? 'Tomorrow' : 'This day';
 
   return `<section class="view">
-    <div class="datebar">
-      <button type="button" class="icon nav" data-act="planShift" data-v="-1" aria-label="Previous day">‹</button>
-      <label class="datepick"><span>${U.esc(U.dayLabel(d))}</span><input type="date" id="planDate" value="${d}" aria-label="Pick a date"></label>
-      <button type="button" class="icon nav" data-act="planShift" data-v="1" aria-label="Next day">›</button>
-    </div>
-    ${chips('planJump', d === today ? 'today' : d === U.addDays(today, 1) ? 'tomorrow' : '', [['today', 'Today'], ['tomorrow', 'Tomorrow']])}
-    ${hint ? `<p class="hint">${hint}</p>` : ''}
-
-    <div class="card progress">
-      <div class="row"><strong>${done}/${tasks.length} done</strong>
-        <span class="muted">${tasks.length ? `${d < today ? `<span class="band b-${Perf.band(pct)}">${Perf.bandLabel(Perf.band(pct))}</span> ` : ''}${pct}%` : 'No activities yet'}</span></div>
-      <div class="bar"><i style="width:${pct}%"></i></div>
+    <div class="card planhead">
+      <div class="ring${tasks.length && pct === 100 ? ' full' : ''}" style="--p:${pct}"><b>${tasks.length ? pct + '%' : '–'}</b></div>
+      <div class="ph-main">
+        <div class="datebar">
+          <button type="button" class="icon nav" data-act="planShift" data-v="-1" aria-label="Previous day">‹</button>
+          <label class="datepick"><span>${U.esc(U.dayLabel(d))}</span><input type="date" id="planDate" value="${d}" aria-label="Pick a date"></label>
+          <button type="button" class="icon nav" data-act="planShift" data-v="1" aria-label="Next day">›</button>
+        </div>
+        <div class="ph-count">${tasks.length ? `<b>${done.length}/${tasks.length}</b> done${band}` : '<span class="muted">No activities yet</span>'}</div>
+      </div>
       ${d === today ? weekLine() : ''}
     </div>
+    ${d !== today ? '<button type="button" class="linkbtn backtoday" data-act="planJump" data-v="today">↩ Back to today</button>' : ''}
+    ${hint ? `<p class="hint">${hint}</p>` : ''}
 
-    <form id="taskForm" class="addrow" autocomplete="off">
-      <input id="taskInput" placeholder="Add an activity…" maxlength="200" enterkeyhint="done">
-      <button class="btn primary" type="submit">Add</button>
+    ${missedEarlier.length ? `<div class="missedwrap">
+      <button type="button" class="missedline" data-act="toggleMissed" aria-expanded="${ui.missedOpen}">
+        <span>⚠ <b>${missedEarlier.length}</b> missed from earlier days</span><span>${ui.missedOpen ? 'Hide ▴' : 'Review ▾'}</span></button>
+      ${ui.missedOpen ? taskList(missedEarlier, today, { showDate: true, tag: true }) : ''}
+    </div>` : ''}
+
+    ${showDaily ? `<div class="plansec daily">
+      <div class="sechead"><h3 class="sectitle">🔁 Daily</h3>
+        <button type="button" class="mini" data-act="toggleManage" aria-expanded="${ui.manageOpen}">${ui.manageOpen ? 'Close' : '⚙ Manage'}</button></div>
+      ${ui.manageOpen ? manageDaily() : ''}
+      ${daily.length ? taskList(daily, today) : `<p class="muted small secnote">${tasks.some(t => t.routine) ? 'All daily activities done ✓' : 'None on this day.'}</p>`}
+    </div>` : ''}
+
+    ${other.length || !showDaily ? `<div class="plansec">
+      <div class="sechead"><h3 class="sectitle">📝 ${otherLabel}</h3></div>
+      ${other.length ? taskList(other, today) : tasks.length ? '<p class="empty">Everything here is done ✓</p>' : emptyDay(d, today)}
+    </div>` : ''}
+
+    ${done.length ? `<div class="plansec donesec">
+      <button type="button" class="sechead donehead" data-act="toggleDone" aria-expanded="${ui.doneOpen}">
+        <span class="sectitle">✓ Done <span class="badge muted">${done.length}</span></span><span class="muted small">${ui.doneOpen ? 'Hide ▴' : 'Show ▾'}</span></button>
+      ${ui.doneOpen ? taskList(done, today, { tag: true }) : ''}
+    </div>` : ''}
+
+    <form id="taskForm" class="addrow dock" autocomplete="off">
+      <div class="addfield">
+        <input id="taskInput" placeholder="${ui.dailyOn ? 'Add a daily activity…' : 'Add an activity…'}" maxlength="200" enterkeyhint="done">
+        <label class="dailytog" title="Repeat every day"><input type="checkbox" id="taskDaily" aria-label="Repeat every day"${ui.dailyOn ? ' checked' : ''}><span>🔁</span></label>
+      </div>
+      <button class="btn primary addbtn" type="submit" aria-label="Add">+</button>
     </form>
-
-    ${tasks.length ? `<ul class="tasks">${tasks.map(t => taskRow(t, today)).join('')}</ul>`
-      : `<p class="empty">Nothing planned for this day.</p>`}
-
-    ${missedEarlier.length ? `<details class="card missedbox"${missedEarlier.length <= 3 ? ' open' : ''}>
-      <summary><span class="badge red">${missedEarlier.length}</span> Missed from earlier days</summary>
-      <ul class="tasks">${missedEarlier.map(t => taskRow(t, today, { showDate: true })).join('')}</ul>
-    </details>` : ''}
   </section>`;
+}
+
+function emptyDay(d, today) {
+  if (d < today) return '<p class="empty">Nothing was planned for this day.</p>';
+  return `<div class="emptyday">
+    <div class="ed-emo" aria-hidden="true">✨</div>
+    <b>${d === today ? 'A fresh day' : 'Plan ahead'}</b>
+    <p class="muted small">Type what you want to get done in the box below.<br>Tap 🔁 first to make it repeat every day.</p>
+  </div>`;
+}
+
+// A short burst of confetti from the progress ring when the day hits 100%.
+function celebrate() {
+  toast('🎉 Perfect day! Everything is done.');
+  const ring = $('.planhead .ring');
+  if (!ring || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const r = ring.getBoundingClientRect();
+  const box = document.createElement('div');
+  box.className = 'confetti';
+  box.style.left = r.left + r.width / 2 + 'px';
+  box.style.top = r.top + r.height / 2 + 'px';
+  const colors = ['#a78bfa', '#22c55e', '#f472b6', '#60a5fa', '#fbbf24', '#fb923c'];
+  for (let i = 0; i < 28; i++) {
+    const a = Math.random() * Math.PI * 2, dist = 60 + Math.random() * 90;
+    const p = document.createElement('i');
+    p.style.cssText = `--x:${Math.cos(a) * dist}px;--y:${Math.sin(a) * dist - 40}px;--r:${Math.random() * 540 - 270}deg;background:${colors[i % colors.length]};animation-delay:${Math.random() * 80}ms`;
+    box.appendChild(p);
+  }
+  document.body.appendChild(box);
+  setTimeout(() => box.remove(), 1400);
+}
+
+function manageDaily() {
+  const rs = routines();
+  return `<div class="managebox">
+    <p class="muted small">These are added to your plan every day. Stop one to end it. Past days stay as they are.</p>
+    ${rs.length ? `<ul class="dailylist">${rs.map(r => `<li><span class="text">${U.esc(r.text)}</span>
+      <button type="button" class="mini" data-act="stopDaily" data-id="${r.id}">Stop</button></li>`).join('')}</ul>`
+      : '<p class="muted small">No daily activities. Turn on 🔁 Daily when adding one.</p>'}
+  </div>`;
 }
 
 function weekLine() {
@@ -1607,6 +1707,7 @@ function render() {
   if (!VIEWS[ui.tab]) ui.tab = 'plan';
   if (ui.acct !== 'all' && !Store.get('accounts', ui.acct)) ui.acct = 'all';
   if (ui.acct !== 'all' && Store.get('accounts', ui.acct).deleted) ui.acct = 'all';
+  fillRoutines();
   const draft = $('#taskInput') ? $('#taskInput').value : '';
   const hadFocus = document.activeElement && document.activeElement.id === 'taskInput';
   $('#view').innerHTML = VIEWS[ui.tab]();
@@ -1634,7 +1735,29 @@ const actions = {
   planJump(el) { ui.planDate = el.dataset.v === 'tomorrow' ? U.addDays(U.today(), 1) : U.today(); render(); },
   delTask(el) {
     const t = Store.get('tasks', el.dataset.id);
-    if (t && confirm(`Delete "${t.text}"?`)) Store.remove('tasks', t.id);
+    if (!t) return;
+    const msg = t.routine && Store.get('routines', t.routine) && !Store.get('routines', t.routine).deleted
+      ? `Remove "${t.text}" from this day only?
+
+It will still come back on other days. To stop it for good, tap ⚙ Manage in the Daily section.`
+      : `Delete "${t.text}"?`;
+    if (confirm(msg)) Store.remove('tasks', t.id);
+  },
+  toggleDone() { ui.doneOpen = !ui.doneOpen; render(); },
+  toggleMissed() { ui.missedOpen = !ui.missedOpen; render(); },
+  toggleManage() { ui.manageOpen = !ui.manageOpen; render(); },
+  stopDaily(el) {
+    const r = Store.get('routines', el.dataset.id);
+    if (!r || !confirm(`Stop adding "${r.text}" every day?
+
+Past days and today stay as they are.`)) return;
+    const today = U.today();
+    // Drop copies already put on later days that weren't ticked yet.
+    for (const t of Store.list('tasks')) {
+      if (t.routine === r.id && t.date > today && !t.done) Store.remove('tasks', t.id);
+    }
+    Store.remove('routines', r.id);
+    toast('Stopped');
   },
   moveToday(el) {
     const t = Store.get('tasks', el.dataset.id);
@@ -1779,7 +1902,15 @@ document.addEventListener('change', async e => {
   const el = e.target;
   if (el.dataset.act === 'toggleTask') {
     const t = Store.get('tasks', el.dataset.id);
-    if (t) Store.upsert('tasks', { ...t, done: el.checked, doneAt: el.checked ? Date.now() : null });
+    if (t) {
+      Store.upsert('tasks', { ...t, done: el.checked, doneAt: el.checked ? Date.now() : null });
+      const day = tasksOn(t.date);
+      if (el.checked && t.date === ui.planDate && ui.tab === 'plan' && day.every(x => x.done)) celebrate();
+    }
+  } else if (el.id === 'taskDaily') {
+    ui.dailyOn = el.checked;
+    $('#taskInput').placeholder = el.checked ? 'Add a daily activity…' : 'Add an activity…';
+    $('#taskInput').focus();
   } else if (el.id === 'planDate' && el.value) {
     ui.planDate = el.value; render();
   } else if (el.id === 'statsFrom' || el.id === 'statsTo') {
@@ -1837,7 +1968,14 @@ document.addEventListener('submit', e => {
     const input = $('#taskInput');
     const text = input.value.trim();
     if (!text) return;
-    Store.upsert('tasks', { id: U.uid(), text, date: ui.planDate, done: false, createdAt: Date.now() });
+    if ($('#taskDaily').checked) {
+      const r = Store.upsert('routines', { id: U.uid(), text, start: ui.planDate, createdAt: Date.now() });
+      Store.upsert('tasks', { id: routineTaskId(r.id, ui.planDate), text, date: ui.planDate, done: false, routine: r.id, createdAt: r.createdAt });
+      ui.dailyOn = false;
+      toast('Added. It will show up every day.');
+    } else {
+      Store.upsert('tasks', { id: U.uid(), text, date: ui.planDate, done: false, createdAt: Date.now() });
+    }
     input.value = '';
     $('#taskInput').focus();
   } else if (e.target.id === 'tradeForm') {
@@ -1907,6 +2045,13 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // ---------- Start ----------
+
+// The Plan add bar sits on top of the tab bar, so keep its height handy for CSS.
+function measureTabbar() {
+  document.documentElement.style.setProperty('--tabbar-h', $('.tabbar').offsetHeight + 'px');
+}
+measureTabbar();
+addEventListener('resize', measureTabbar);
 
 applyTheme(lsGet('dt.theme', 'dark'));
 Store.load();
