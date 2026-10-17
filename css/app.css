@@ -206,9 +206,9 @@ main { max-width: 640px; margin: 0 auto; padding: 14px 16px 24px; }
 .editrow .save { background: var(--accent); color: var(--accent-text); }
 
 /* ---------- Plan layout ---------- */
-.planhead { display: grid; grid-template-columns: auto 1fr; gap: 10px 14px; align-items: center; }
+.planhead { display: grid; grid-template-columns: auto 1fr; gap: 16px 14px; align-items: center; padding: 20px 16px 16px; }
 .planhead .weekline { grid-column: 1 / -1; margin-top: 0; }
-.ph-main { display: grid; gap: 8px; min-width: 0; }
+.ph-main { display: grid; gap: 12px; min-width: 0; }
 .ph-count { font-size: 14px; color: var(--muted); padding-left: 2px; }
 .ph-count b { color: var(--text); font-size: 16px; }
 .ring {
