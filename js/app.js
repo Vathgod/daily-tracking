@@ -1701,6 +1701,7 @@ function viewTrading(from, to, head) {
   return `<section class="view">
     ${head}
     ${acctChips()}
+    ${equityCard(from, to)}
     <div class="tiles">
       ${tile('Total PnL', U.money(total), U.cls(total))}
       ${tile('Win rate', wins.length + losses.length ? Math.round(wins.length / (wins.length + losses.length) * 100) + '%' : '–', '', `${wins.length}W · ${losses.length}L · ${pnls.length - wins.length - losses.length}BE`)}
@@ -1719,6 +1720,118 @@ function viewTrading(from, to, head) {
     ${statTable('Buy vs Sell', groupStats(trades, t => t.side, ['Buy', 'Sell']))}
     ${ui.acct === 'all' && Acct.all().length > 1 ? statTable('By account', groupStats(trades, t => Acct.label(Store.get('accounts', t.accountId)))) : ''}
   </section>`;
+}
+
+// ---------- Equity curve ----------
+
+let eqPts = []; // points drawn in the Stats curve, for the tap readout
+
+// One account: its balance (with the fail line if funded). All accounts: PnL added up.
+function equityPoints(from, to) {
+  const a = ui.acct !== 'all' ? Store.get('accounts', ui.acct) : null;
+  let pts;
+  if (a) {
+    pts = Acct.curve(a);
+  } else {
+    let sum = 0;
+    pts = [{ start: true, bal: 0, line: NaN }];
+    for (const t of tradesIn('0000-00-00', '9999-12-31').reverse()) {
+      sum += U.num(t.pnl) || 0;
+      pts.push({ date: t.date, time: t.time, bal: sum, line: NaN, trade: t });
+    }
+    pts[0].date = pts[1] ? pts[1].date : '';
+  }
+  // Keep the range, starting from the balance just before it.
+  const before = pts.filter(p => !p.start && p.date < from);
+  const inside = pts.filter(p => !p.start && p.date >= from && p.date <= to);
+  if (!inside.some(p => p.trade)) return { pts: [], a };
+  const first = before.length ? { ...before[before.length - 1], trade: null, flow: null, start: true, date: from } : pts[0];
+  return { pts: [first, ...inside], a };
+}
+
+function eqLabel(p) {
+  const when = U.fmtDate(p.date, { weekday: 'short', day: 'numeric', month: 'short' });
+  const what = p.start ? 'Start'
+    : p.flow ? `${U.num(p.flow.amount) < 0 ? 'Withdraw' : 'Deposit'} ${U.money(U.num(p.flow.amount))}`
+      : `${U.esc(p.trade.pair)} <b class="${U.cls(U.num(p.trade.pnl))}">${U.money(U.num(p.trade.pnl))}</b>`;
+  const line = isFinite(p.line) ? ` · fail line ${U.money(p.line, false)}` : '';
+  return `${U.esc(when)}${p.time && !p.start && !p.flow ? ' ' + U.esc(p.time) : ''} · ${what}<br>
+    <span class="muted">${ui.acct === 'all' ? 'Total PnL' : 'Balance'} <b>${U.money(p.bal, ui.acct === 'all')}</b>${line}</span>`;
+}
+
+function equityCard(from, to) {
+  const { pts, a } = equityPoints(from, to);
+  eqPts = pts;
+  if (pts.length < 2) return '';
+  const all = !a;
+  const W = 300, H = 140;
+  const vals = pts.flatMap(p => [p.bal, p.line]).filter(isFinite);
+  const target = a && a.type === 'funded' && (Acct.stats(a).status === 'active') ? Acct.amount(a.target, U.num(a.startBalance) || 0) : NaN;
+  const targetBal = isFinite(target) ? (U.num(a.startBalance) || 0) + target : NaN;
+  if (isFinite(targetBal)) vals.push(targetBal);
+  if (all) vals.push(0);
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  const pad = (hi - lo || Math.abs(hi) || 1) * 0.08;
+  lo -= pad; hi += pad;
+  const x = i => (i / (pts.length - 1)) * W;
+  const y = v => H - ((v - lo) / (hi - lo)) * H;
+  const path = pts.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.bal).toFixed(1)}`).join('');
+  for (const p of pts) p.top = y(p.bal) / H * 100;
+  const area = `${path}L${W},${H}L0,${H}Z`;
+  // Fail line as steps, since it only moves when a trade lands.
+  const failPts = pts.map((p, i) => [i, p.line]).filter(([, v]) => isFinite(v));
+  const fail = failPts.length
+    ? failPts.map(([i, v], k) => `${k ? `L${x(i).toFixed(1)},${y(failPts[k - 1][1]).toFixed(1)}L` : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join('') + `L${W},${y(failPts[failPts.length - 1][1]).toFixed(1)}`
+    : '';
+  const hline = (v, cls) => isFinite(v) ? `<path class="${cls}" d="M0,${y(v).toFixed(1)}H${W}"/>` : '';
+
+  const s = pts[0].bal, e = pts[pts.length - 1].bal;
+  let peak = -Infinity, dd = 0, cash = 0;
+  for (const p of pts) {
+    if (p.flow && !p.start) cash += U.num(p.flow.amount) || 0;
+    const v = p.bal - cash; // trading result only
+    peak = Math.max(peak, v); dd = Math.min(dd, v - peak);
+  }
+  // Deposits and withdrawals move the balance but aren't profit.
+  const flows = pts.slice(1).reduce((sum, p) => sum + (p.flow ? U.num(p.flow.amount) || 0 : 0), 0);
+  const change = e - s - flows;
+  const pct = !all && s > 0 ? ` (${change >= 0 ? '+' : '−'}${Math.abs(change / s * 100).toFixed(1)}%)` : '';
+  const up = change >= 0 ? 'up' : 'down';
+  const last = pts.length - 1;
+
+  return `<div class="card eq">
+    <div class="eq-head">
+      <h4 class="sub">${all ? 'PnL curve · all accounts' : `Balance · ${U.esc(Acct.label(a))}`}</h4>
+      <div class="eq-sum"><b>${U.money(s, all)} → ${U.money(e, all)}</b> <span class="${U.cls(change)}">${U.money(change)}${pct}</span></div>
+      <div class="muted small">Max drawdown <b class="${dd < 0 ? 'neg' : ''}">${dd < 0 ? U.money(dd) : '$0.00'}</b>${flows ? ` · ${flows > 0 ? 'deposits' : 'withdrawals'} ${U.money(flows)}` : ''}${isFinite(pts[last].line) ? ` · ${U.money(e - pts[last].line, false)} above the fail line` : ''}</div>
+    </div>
+    <div class="eq-plot" data-n="${pts.length}" role="img" aria-label="Balance chart. Drag across it to see each trade.">
+      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
+        <path class="eq-area ${up}" d="${area}"/>
+        ${all ? hline(0, 'eq-zero') : hline(s, 'eq-zero')}
+        ${hline(targetBal, 'eq-target')}
+        ${fail ? `<path class="eq-fail" d="${fail}"/>` : ''}
+        <path class="eq-line ${up}" d="${path}"/>
+      </svg>
+      <i class="eq-dot ${up}" style="left:100%;top:${pts[last].top.toFixed(2)}%"></i>
+    </div>
+    <div class="eq-axis muted small"><span>${U.esc(U.fmtDate(pts[0].date, { day: 'numeric', month: 'short' }))}</span><span>${U.esc(U.fmtDate(pts[last].date, { day: 'numeric', month: 'short' }))}</span></div>
+    <p class="eq-read small">${eqLabel(pts[last])}</p>
+    ${fail || isFinite(targetBal) ? `<div class="legend">${fail ? '<span><i class="lg-fail"></i>Fail line</span>' : ''}${isFinite(targetBal) ? '<span><i class="lg-target"></i>Profit target</span>' : ''}</div>` : ''}
+  </div>`;
+}
+
+// Drag or tap across the curve to read each point.
+function eqScrub(e) {
+  const plot = e.target.closest('.eq-plot');
+  if (!plot || !eqPts.length) return;
+  const r = plot.getBoundingClientRect();
+  const n = eqPts.length;
+  const i = Math.max(0, Math.min(n - 1, Math.round(((e.clientX - r.left) / r.width) * (n - 1))));
+  const dot = plot.querySelector('.eq-dot');
+  dot.style.left = (i / (n - 1) * 100) + '%';
+  dot.style.top = eqPts[i].top + '%';
+  plot.closest('.eq').querySelector('.eq-read').innerHTML = eqLabel(eqPts[i]);
 }
 
 // By setup, and what each mistake cost. Shown once trades in the range have tags.
@@ -2206,6 +2319,9 @@ $('#pairForm').addEventListener('keydown', e => {
   if (e.target.name === 'newName' || e.target.name === 'newValue') addPair();
   else e.target.blur();
 });
+
+document.addEventListener('pointerdown', eqScrub);
+document.addEventListener('pointermove', e => { if (e.buttons || e.pointerType === 'mouse') eqScrub(e); });
 
 // Enter in a "new tag" box adds it; in a rename box it saves the name.
 $('#tagForm').addEventListener('keydown', e => {

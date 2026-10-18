@@ -246,3 +246,22 @@
 .tagrow.hid .mini { padding: 6px 8px; }
 .ttags { display: flex; flex-wrap: wrap; gap: 4px; }
 .tblnote { margin: 8px 0 0; }
+
+/* Equity curve */
+.eq-head { display: grid; gap: 2px; margin-bottom: 10px; }
+.eq-head .sub { margin: 0; }
+.eq-sum { font-variant-numeric: tabular-nums; }
+.eq-plot { position: relative; height: 150px; touch-action: pan-y; cursor: crosshair; }
+.eq-plot svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.eq-plot path { vector-effect: non-scaling-stroke; }
+.eq-plot path:not(.eq-area) { fill: none; }
+.eq-line { stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+.eq-zero { stroke: var(--border); stroke-width: 1; }
+.eq-fail, .eq-target { stroke-width: 1.5; stroke-dasharray: 5 4; }
+.eq-dot {
+  position: absolute; width: 12px; height: 12px; border-radius: 50%; transform: translate(-50%, -50%);
+  border: 2px solid var(--surface); pointer-events: none;
+}
+.eq-axis { display: flex; justify-content: space-between; margin-top: 4px; }
+.eq-read { margin: 8px 0 0; font-variant-numeric: tabular-nums; min-height: 2.6em; }
+.legend i.lg-fail, .legend i.lg-target { width: 16px; height: 0; border-top: 2px dashed; background: none; border-radius: 0; }

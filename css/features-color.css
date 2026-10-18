@@ -188,3 +188,15 @@ body[data-tab="money"] .statrow { border-top-color: var(--c-money); }
 .tagpick input:checked + span { background: var(--blue); border-color: transparent; color: #fff; }
 .tagpick.mis input:checked + span { background: var(--neg); }
 .badge.tset { background: color-mix(in srgb, var(--blue) 16%, transparent); color: var(--blue); }
+
+/* Equity curve */
+.eq-line.up { stroke: var(--pos); }
+.eq-line.down { stroke: var(--neg); }
+.eq-area.up { fill: color-mix(in srgb, var(--pos) 14%, transparent); }
+.eq-area.down { fill: color-mix(in srgb, var(--neg) 14%, transparent); }
+.eq-dot.up { background: var(--pos); }
+.eq-dot.down { background: var(--neg); }
+.eq-fail { stroke: var(--neg); }
+.eq-target { stroke: var(--pos); opacity: .7; }
+.legend i.lg-fail { border-color: var(--neg); }
+.legend i.lg-target { border-color: var(--pos); }

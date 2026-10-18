@@ -43,7 +43,8 @@ const Acct = {
       .sort((x, y) => (x.date + x.time).localeCompare(y.date + y.time));
   },
 
-  stats(a) {
+  // onStep(trade, balance, failLine) is called after each trade of a funded account.
+  stats(a, onStep) {
     const start = U.num(a.startBalance) || 0;
     const trades = Acct.trades(a);
     const pnl = trades.reduce((s, t) => s + (U.num(t.pnl) || 0), 0);
@@ -89,6 +90,7 @@ const Acct = {
       peak = Math.max(peak, bal);
       dayPnl[d] = bal - dayStart;
       const line = failLine();
+      if (onStep) onStep(t, bal, line);
       if (!breach && isFinite(line) && bal <= line) breach = { rule: 'max', date: t.date, line };
       if (!breach && isFinite(dailyLimit) && dayPnl[d] <= -dailyLimit) breach = { rule: 'daily', date: t.date };
     }
@@ -112,5 +114,30 @@ const Acct = {
     r.targetHit = target > 0 && bal - start >= target;
     if (r.status !== 'passed' && breach) r.status = 'failed';
     return r;
+  },
+
+  // Balance after each step, oldest first: [{ date, time, bal, line, trade | flow | start }].
+  // Live accounts include deposits and withdrawals; funded ones carry the fail line.
+  curve(a) {
+    const start = U.num(a.startBalance) || 0;
+    const pts = [];
+    if (a.type === 'funded') {
+      const maxLoss = Acct.amount(a.maxLoss, start);
+      pts.push({ start: true, bal: start, line: start - maxLoss });
+      Acct.stats(a, (t, bal, line) => pts.push({ date: t.date, time: t.time, bal, line, trade: t }));
+    } else {
+      pts.push({ start: true, bal: start, line: NaN });
+      const steps = [
+        ...Acct.trades(a).map(t => ({ date: t.date, time: t.time, v: U.num(t.pnl) || 0, trade: t })),
+        ...(a.cashflows || []).map(f => ({ date: f.date, time: '00:00', v: U.num(f.amount) || 0, flow: f })),
+      ].sort((x, y) => (x.date + x.time).localeCompare(y.date + y.time));
+      let bal = start;
+      for (const s of steps) {
+        bal += s.v;
+        pts.push({ date: s.date, time: s.time, bal, line: NaN, trade: s.trade, flow: s.flow });
+      }
+    }
+    pts[0].date = pts[1] ? pts[1].date : '';
+    return pts;
   },
 };
