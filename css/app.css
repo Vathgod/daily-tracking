@@ -286,6 +286,7 @@ body[data-tab="plan"] .toast { bottom: calc(var(--tabbar-h, 64px) + 72px); }
 .badge.daily { background: color-mix(in srgb, var(--violet) 18%, transparent); color: var(--violet); }
 .dailylist { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .dailylist li { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.dailyacts { display: flex; gap: 6px; flex-shrink: 0; }
 
 /* ---------- Trades ---------- */
 .hero { text-align: center; }
