@@ -183,3 +183,8 @@ body[data-tab="money"] .statrow { border-top-color: var(--c-money); }
 .mstack i.pm-card, .mlegend i.pm-card { background: var(--pm-card); }
 .mlegend li > span { display: inline-flex; align-items: center; gap: 8px; }
 .mlegend i { width: 10px; height: 10px; border-radius: 3px; }
+
+/* Trade tags */
+.tagpick input:checked + span { background: var(--blue); border-color: transparent; color: #fff; }
+.tagpick.mis input:checked + span { background: var(--neg); }
+.badge.tset { background: color-mix(in srgb, var(--blue) 16%, transparent); color: var(--blue); }

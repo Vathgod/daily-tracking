@@ -89,6 +89,13 @@
 
       <div id="preview" class="preview"></div>
 
+      <div class="field"><span>Setup</span>
+        <div id="setupPick" class="catpick tagpick" role="group" aria-label="Setup"></div>
+      </div>
+      <div class="field"><span>Mistakes</span>
+        <div id="mistakePick" class="catpick tagpick mis" role="group" aria-label="Mistakes"></div>
+      </div>
+
       <label class="field"><span>Note (optional)</span><input name="note" maxlength="200" placeholder="e.g. entered too early"></label>
       <div id="shotBox"></div>
 
@@ -302,6 +309,30 @@
     </form>
   </dialog>
 
+  <!-- Trade tags -->
+  <dialog id="tagDlg" class="sheet">
+    <form id="tagForm" autocomplete="off" novalidate>
+      <div class="sheethead">
+        <h2 tabindex="-1" autofocus>Setups &amp; mistakes</h2>
+        <button type="button" class="icon" data-act="closeDlg" aria-label="Close">×</button>
+      </div>
+      <p class="muted small">Tap a name to change it. Tags already used on trades can be hidden with 🙈; they stay on old trades and in Stats.</p>
+      <h3 class="sub">Setups</h3>
+      <ul id="setupList" class="catlist"></ul>
+      <div class="catrow tagrow add">
+        <input name="newSetup" maxlength="24" placeholder="New setup, e.g. Range" aria-label="Setup name">
+        <button type="button" class="btn primary" data-act="addTag" data-v="setup">Add</button>
+      </div>
+      <h3 class="sub">Mistakes</h3>
+      <ul id="mistakeList" class="catlist"></ul>
+      <div class="catrow tagrow add">
+        <input name="newMistake" maxlength="24" placeholder="New mistake, e.g. Early exit" aria-label="Mistake name">
+        <button type="button" class="btn primary" data-act="addTag" data-v="mistake">Add</button>
+      </div>
+      <div id="hiddenTags"></div>
+    </form>
+  </dialog>
+
   <!-- Weekly review -->
   <dialog id="reviewDlg" class="sheet">
     <div class="sheetbody">
@@ -388,6 +419,7 @@
   <script src="js/util.js"></script>
   <script src="js/store.js"></script>
   <script src="js/pairs.js"></script>
+  <script src="js/tags.js"></script>
   <script src="js/accounts.js"></script>
   <script src="js/perf.js"></script>
   <script src="js/money.js"></script>

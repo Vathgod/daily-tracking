@@ -236,3 +236,13 @@
 .pact { font-size: 18px; }
 #hiddenPairs .sub { margin: 4px 0 6px; }
 .pairrow select { padding: 9px 2px 9px 6px; font-size: 14px; }
+
+/* Trade tags */
+.tagpick { gap: 5px; }
+.tagpick span, .tagpick .catedit { padding: 6px 11px; font-size: 13px; }
+.catrow.tagrow, .catrow.tagrow.add { grid-template-columns: 1fr auto; }
+.tagrow .icon { width: 40px; }
+.tagrow.hid { opacity: .7; }
+.tagrow.hid .mini { padding: 6px 8px; }
+.ttags { display: flex; flex-wrap: wrap; gap: 4px; }
+.tblnote { margin: 8px 0 0; }

@@ -471,6 +471,86 @@ function delPair(id) {
   renderPairs();
 }
 
+// ---------- Trade tags ----------
+
+function tagRow(t) {
+  const n = Tags.trades(t.id).length;
+  const act = t.hidden
+    ? `<button type="button" class="mini" data-act="showTag" data-id="${U.esc(t.id)}">Show again</button>`
+    : n
+      ? `<button type="button" class="icon" data-act="hideTag" data-id="${U.esc(t.id)}" aria-label="Hide ${U.esc(t.name)}" title="Hide (keeps it on ${n} trade${n === 1 ? '' : 's'})">🙈</button>`
+      : `<button type="button" class="icon del" data-act="delTag" data-id="${U.esc(t.id)}" aria-label="Delete ${U.esc(t.name)}">×</button>`;
+  return `<li class="catrow tagrow${t.hidden ? ' hid' : ''}">
+    <input data-tag="${U.esc(t.id)}" value="${U.esc(t.name)}" maxlength="24" aria-label="Name">
+    ${act}
+  </li>`;
+}
+
+function renderTags() {
+  const empty = '<li class="muted small">None yet. Add one below.</li>';
+  $('#setupList').innerHTML = Tags.active('setup').map(tagRow).join('') || empty;
+  $('#mistakeList').innerHTML = Tags.active('mistake').map(tagRow).join('') || empty;
+  const hidden = Tags.all().filter(t => t.hidden);
+  $('#hiddenTags').innerHTML = hidden.length
+    ? `<h3 class="sub">Hidden</h3><ul class="catlist">${hidden.map(tagRow).join('')}</ul>` : '';
+}
+
+function openTags() {
+  const f = $('#tagForm');
+  f.newSetup.value = '';
+  f.newMistake.value = '';
+  renderTags();
+  $('#tagDlg').showModal();
+}
+
+function saveTag(t, patch) {
+  const { id, kind, name, hidden, createdAt } = { ...t, ...patch };
+  Store.upsert('tags', { id, kind, name, hidden: !!hidden, createdAt: createdAt || 0 });
+}
+
+function tagTaken(kind, name, id) {
+  return Tags.all(kind).some(t => t.id !== id && t.name.toLowerCase() === name.toLowerCase());
+}
+
+function renameTag(el) {
+  const t = Tags.get(el.dataset.tag);
+  if (!t) return;
+  const name = el.value.trim();
+  if (!name) { el.value = t.name; return toast('A tag needs a name.'); }
+  if (name === t.name) return;
+  if (tagTaken(t.kind, name, t.id)) { el.value = t.name; return toast(`"${name}" already exists.`); }
+  saveTag(t, { name });
+}
+
+function addTag(kind) {
+  const input = $('#tagForm')[kind === 'setup' ? 'newSetup' : 'newMistake'];
+  const name = input.value.trim();
+  if (!name) return toast(`Type a name for the ${kind}.`);
+  if (tagTaken(kind, name)) return toast(`"${name}" already exists.`);
+  saveTag({ id: U.uid(), kind, createdAt: Date.now() }, { name });
+  input.value = '';
+  renderTags();
+  toast(`Added ${name}`);
+}
+
+function setTagHidden(id, hidden) {
+  const t = Tags.get(id);
+  if (!t) return;
+  saveTag(t, { hidden });
+  renderTags();
+  toast(hidden ? `${t.name} hidden. Its trades keep it.` : `${t.name} is back`);
+}
+
+function delTag(id) {
+  const t = Tags.get(id);
+  if (!t) return;
+  if (Tags.trades(id).length) return setTagHidden(id, true);
+  if (!confirm(`Delete "${t.name}"?`)) return;
+  // Built-in tags have no stored item yet, so save a delete marker.
+  Store.upsert('tags', { id, deleted: true });
+  renderTags();
+}
+
 // Pair buttons in the trade form: pairs you trade, plus the edited trade's
 // own pair if it's hidden now.
 function renderPairPick(sel) {
@@ -484,6 +564,28 @@ function renderPairPick(sel) {
 }
 
 function formPair() { return ($('#pairPick input:checked') || {}).value || ''; }
+
+// Setup and mistake chips in the trade form: tags in use, plus the edited
+// trade's own tags if they're hidden now.
+function renderTagPick(setup, mistakes) {
+  const own = form.id && Store.get('trades', form.id) ? Store.get('trades', form.id) : null;
+  const pick = (kind, sel) => {
+    const list = Tags.active(kind);
+    const mine = own ? (kind === 'setup' ? [own.setup] : own.mistakes || []) : [];
+    for (const id of mine) if (!list.some(t => t.id === id) && Tags.get(id)) list.push(Tags.get(id));
+    return list.map(t => `<label><input type="checkbox" name="${kind}" value="${U.esc(t.id)}"${sel.includes(t.id) ? ' checked' : ''}><span>${U.esc(t.name)}</span></label>`).join('') +
+      '<button type="button" class="catedit" data-act="manageTags">✏️ Edit</button>';
+  };
+  $('#setupPick').innerHTML = pick('setup', setup ? [setup] : []);
+  $('#mistakePick').innerHTML = pick('mistake', mistakes || []);
+}
+
+function formTags() {
+  return {
+    setup: ($('#setupPick input:checked') || {}).value || '',
+    mistakes: $$('#mistakePick input:checked').map(i => i.value),
+  };
+}
 
 // ---------- Trades ----------
 
@@ -502,8 +604,15 @@ function tradeCard(t) {
       <span>${U.esc(t.time || '')} ${sessTag(c.session)}</span>
       <span>${meta}${t.shot ? ' · 📷' : ''}</span>
     </div>
+    ${tradeTags(t)}
     ${t.note ? `<div class="note">${U.esc(t.note)}</div>` : ''}
   </button>`;
+}
+
+function tradeTags(t) {
+  const setup = Tags.setup(t), mis = Tags.mistakes(t);
+  if (!setup && !mis.length) return '';
+  return `<div class="ttags">${setup ? `<span class="badge tset">${U.esc(Tags.name(setup))}</span>` : ''}${mis.map(id => `<span class="badge red">${U.esc(Tags.name(id))}</span>`).join('')}</div>`;
 }
 
 function sessSlug(s) {
@@ -619,6 +728,7 @@ function openTradeForm(id) {
   f.slPts.value = c ? abs(c.risk) : '';
   f.pnl.value = t ? abs(U.num(t.pnl)) : '';
   f.note.value = t ? t.note || '' : '';
+  renderTagPick(t ? t.setup : lsGet('dt.lastSetup', ''), t ? t.mistakes : []);
   // Keep a typed-over PnL; otherwise let it follow points × lot.
   const auto = autoPnl(f);
   form.pnlTouched = !!t && f.pnl.value !== '' && !(isFinite(auto) && Math.abs(auto - U.num(f.pnl.value)) < 0.005);
@@ -648,6 +758,7 @@ function readForm() {
     slPts: isFinite(sl) && sl > 0 ? String(Math.abs(sl)) : '',
     pnl: signed(f.pnl.value),
     note: f.note.value.trim(),
+    ...formTags(),
   };
 }
 
@@ -706,6 +817,8 @@ function saveTrade() {
   const old = form.id ? Store.get('trades', form.id) : null;
   const item = { ...(old || { id: U.uid(), createdAt: Date.now() }), ...t, shot: form.shot || null };
   if (!item.shot) delete item.shot;
+  if (!item.setup) delete item.setup;
+  if (!item.mistakes.length) delete item.mistakes;
   // Older trades stored prices; points replace them.
   delete item.entry; delete item.sl; delete item.exit;
   Store.upsert('trades', item);
@@ -713,6 +826,7 @@ function saveTrade() {
   lsSet('dt.lastPair', t.pair);
   lsSet('dt.lastAcct', t.accountId);
   if (t.lot) lsSet('dt.lastLot', t.lot);
+  if (!old) lsSet('dt.lastSetup', t.setup);
   $('#tradeDlg').close();
   toast(old ? 'Trade updated' : 'Trade saved');
   const tp = sumPnl(tradesIn(U.today(), U.today(), 'all', 'all'));
@@ -1322,28 +1436,34 @@ function viewCalendar() {
 function groupStats(trades, keyFn, order) {
   const g = {};
   for (const t of trades) {
-    const k = keyFn(t);
-    const s = (g[k] ||= { n: 0, w: 0, l: 0, pnl: 0 });
     const p = U.num(t.pnl) || 0;
-    s.n++; s.pnl += p;
-    if (p > 0) s.w++; else if (p < 0) s.l++;
+    const rr = U.calc(t).rr;
+    // A key list puts the trade in each group (a trade can have several mistakes).
+    for (const k of [].concat(keyFn(t))) {
+      const s = (g[k] ||= { n: 0, w: 0, l: 0, pnl: 0, rr: 0, rrn: 0 });
+      s.n++; s.pnl += p;
+      if (p > 0) s.w++; else if (p < 0) s.l++;
+      if (isFinite(rr)) { s.rr += rr; s.rrn++; }
+    }
   }
   const keys = order ? [...order.filter(k => g[k]), ...Object.keys(g).filter(k => !order.includes(k))] : Object.keys(g);
   return keys.map(k => ({ k, ...g[k] }));
 }
 
-function statTable(title, rows, styleFn) {
+function statTable(title, rows, styleFn, { rr = false, note = '' } = {}) {
   if (!rows.length) return '';
   const best = rows.reduce((a, b) => (b.pnl > a.pnl ? b : a));
   return `<div class="card">
     <h4 class="sub">${title}</h4>
     <table class="tbl">
-      <thead><tr><th></th><th>Trades</th><th>Win %</th><th>PnL</th></tr></thead>
+      <thead><tr><th></th><th>Trades</th><th>Win %</th>${rr ? '<th>Avg RR</th>' : ''}<th>PnL</th></tr></thead>
       <tbody>${rows.map(r => `<tr${rows.length > 1 && r === best && r.pnl > 0 ? ' class="best"' : ''}>
         <td><span class="dot k-${U.esc(String(r.k).replace(/[^A-Za-z0-9]/g, ''))}"${styleFn ? ` style="${styleFn(r.k)}"` : ''}></span>${U.esc(r.k)}${rows.length > 1 && r === best && r.pnl > 0 ? ' ★' : ''}</td><td>${r.n}</td>
         <td>${r.w + r.l ? Math.round(r.w / (r.w + r.l) * 100) + '%' : '–'}</td>
+        ${rr ? `<td>${r.rrn ? U.fmtRR(r.rr / r.rrn) : '–'}</td>` : ''}
         <td class="${U.cls(r.pnl)}">${U.money(r.pnl)}</td></tr>`).join('')}</tbody>
     </table>
+    ${note ? `<p class="muted small tblnote">${note}</p>` : ''}
   </div>`;
 }
 
@@ -1594,10 +1714,30 @@ function viewTrading(from, to, head) {
     </div>
     ${trades.length ? '' : '<p class="empty">No trades in this range yet.</p>'}
     ${statTable('By pair', groupStats(trades, t => t.pair, Pairs.all().map(p => p.name)), Pairs.style)}
+    ${tagTables(trades)}
     ${statTable('By session', groupStats(trades, t => U.calc(t).session || '–', ['Asia', 'London', 'London/NY overlap', 'New York', 'Off-session']))}
     ${statTable('Buy vs Sell', groupStats(trades, t => t.side, ['Buy', 'Sell']))}
     ${ui.acct === 'all' && Acct.all().length > 1 ? statTable('By account', groupStats(trades, t => Acct.label(Store.get('accounts', t.accountId)))) : ''}
   </section>`;
+}
+
+// By setup, and what each mistake cost. Shown once trades in the range have tags.
+function tagTables(trades) {
+  const NONE = 'No setup', CLEAN = 'Clean trades ✓';
+  let out = '';
+  if (trades.some(t => Tags.setup(t))) {
+    out += statTable('By setup', groupStats(trades, t => Tags.name(Tags.setup(t)) || NONE,
+      [...Tags.all('setup').map(t => t.name), NONE]), null, { rr: true });
+  }
+  if (trades.some(t => Tags.mistakes(t).length)) {
+    const rows = groupStats(trades, t => Tags.mistakes(t).length ? Tags.mistakes(t).map(Tags.name) : CLEAN,
+      [CLEAN, ...Tags.all('mistake').map(t => t.name)]);
+    const withMis = sumPnl(trades.filter(t => Tags.mistakes(t).length));
+    out += statTable('Mistakes', rows, null, {
+      note: `Clean trades have no mistake tagged. A trade with two mistakes counts in both rows. All trades with a mistake: <b class="${U.cls(withMis)}">${U.money(withMis)}</b>.`,
+    });
+  }
+  return out;
 }
 
 // ---------- Weekly review ----------
@@ -1859,6 +1999,11 @@ Past days and today stay as they are.`)) return;
   hidePair(el) { setPairHidden(el.dataset.id, true); },
   showPair(el) { setPairHidden(el.dataset.id, false); },
   delPair(el) { delPair(el.dataset.id); },
+  manageTags() { openTags(); },
+  addTag(el) { addTag(el.dataset.v); },
+  hideTag(el) { setTagHidden(el.dataset.id, true); },
+  showTag(el) { setTagHidden(el.dataset.id, false); },
+  delTag(el) { delTag(el.dataset.id); },
   setAllow(el) { openAllow(el.dataset.v); },
   delAllow() {
     if (!confirm("Remove this week's money?")) return;
@@ -1979,6 +2124,11 @@ document.addEventListener('change', async e => {
     editPair(el);
   } else if (el.dataset.cat) {
     renameCat(el);
+  } else if (el.dataset.tag) {
+    renameTag(el);
+  } else if (el.name === 'setup') {
+    // One setup per trade: picking one clears the others.
+    if (el.checked) for (const x of $$('#setupPick input')) if (x !== el) x.checked = false;
   } else if (el.closest('#expForm')) {
     expHint();
   } else if (el.closest('#allowForm')) {
@@ -2032,7 +2182,7 @@ document.addEventListener('submit', e => {
   } else if (e.target.id === 'allowForm') {
     e.preventDefault();
     saveAllow();
-  } else if (e.target.id === 'catForm' || e.target.id === 'pairForm' || e.target.id === 'settingsForm') {
+  } else if (e.target.id === 'catForm' || e.target.id === 'pairForm' || e.target.id === 'tagForm' || e.target.id === 'settingsForm') {
     e.preventDefault();
   }
 });
@@ -2055,6 +2205,20 @@ $('#pairForm').addEventListener('keydown', e => {
   e.preventDefault();
   if (e.target.name === 'newName' || e.target.name === 'newValue') addPair();
   else e.target.blur();
+});
+
+// Enter in a "new tag" box adds it; in a rename box it saves the name.
+$('#tagForm').addEventListener('keydown', e => {
+  if (e.key !== 'Enter' || e.target.tagName !== 'INPUT') return;
+  e.preventDefault();
+  if (e.target.name === 'newSetup') addTag('setup');
+  else if (e.target.name === 'newMistake') addTag('mistake');
+  else e.target.blur();
+});
+
+// Tags edited from inside the trade form show up there right away.
+$('#tagDlg').addEventListener('close', () => {
+  if ($('#tradeDlg').open) { const t = formTags(); renderTagPick(t.setup, t.mistakes); }
 });
 
 // The page isn't rebuilt under an open trade form, so catch up when it closes.
