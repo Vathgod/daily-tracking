@@ -1027,25 +1027,30 @@ function walletCard(ws) {
       ${foot}
     </div>`;
   }
-  const pctLeft = w.got > 0 ? Math.max(0, Math.min(100, w.left / w.got * 100)) : 0;
-  const level = w.left < 0 ? 'hit' : pctLeft <= 25 ? 'warn' : '';
+  // Extra spending only comes off the week's money once the week is over.
+  const extra = current ? w.spent - Money.dayTotal(w.list) : 0;
+  const spent = w.spent - extra;
+  const left = w.got - spent;
+  const pctLeft = w.got > 0 ? Math.max(0, Math.min(100, left / w.got * 100)) : 0;
+  const level = left < 0 ? 'hit' : pctLeft <= 25 ? 'warn' : '';
   const daysLeft = 7 - (U.weekdayMon(today) + 1) % 7; // including today
   const daily = w.got / SPEND_DAYS;
   const spentToday = current ? Money.dayTotal(Money.list(today, today)) : 0;
   return `<div class="card wallet ${level}">
     ${head}
     <div class="w-left">
-      <span class="muted small">${w.left < 0 ? 'Over budget by' : current ? 'Left in wallet' : 'Left over'}</span>
-      <span class="big ${w.left < 0 ? 'neg' : ''}">${Money.fmt(Math.abs(w.left), false)}</span>
-      ${w.a.cur === 'KHR' ? `<span class="muted small">≈ ${Money.fmtKHR(Math.abs(w.left) * KHR_PER_USD)}</span>` : ''}
+      <span class="muted small">${left < 0 ? 'Over budget by' : current ? 'Left in wallet' : 'Left over'}</span>
+      <span class="big ${left < 0 ? 'neg' : ''}">${Money.fmt(Math.abs(left), false)}</span>
+      ${w.a.cur === 'KHR' ? `<span class="muted small">≈ ${Money.fmtKHR(Math.abs(left) * KHR_PER_USD)}</span>` : ''}
     </div>
     <div class="bar"><i style="width:${pctLeft}%"></i></div>
     <div class="w-stats">
       <div><span>Week's money</span><b>${Money.fmtOrig(w.a)}</b></div>
-      <div><span>Spent</span><b>${Money.fmt(w.spent, false)}</b></div>
+      <div><span>Spent</span><b>${Money.fmt(spent, false)}</b></div>
       <div><span>Daily limit</span><b>${Money.fmt(daily, false)}</b></div>
     </div>
     ${current ? todayBlock(spentToday, daily) : ''}
+    ${extra > 0 ? `<p class="small w-note">🧾 Extra this week <b>${Money.fmt(extra, false)}</b> · taken off when the week ends</p>` : ''}
     ${current ? `<p class="muted small w-note">${daysLeft} day${daysLeft === 1 ? '' : 's'} left until Saturday · daily limit = money ÷ ${SPEND_DAYS}</p>` : ''}
     <button type="button" class="linkbtn" data-act="setAllow" data-v="${ws}">Edit week's money</button>
     ${foot}
