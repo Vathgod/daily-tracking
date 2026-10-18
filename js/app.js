@@ -1003,7 +1003,7 @@ function todayBlock(spent, limit) {
     </div>`;
 }
 
-// Wallet for one spending week (Sunday to Saturday). The arrows step back
+// Wallet for one spending week (Sunday to Saturday, money for Monday to Friday). The arrows step back
 // through past weeks so their money can be set and their spending checked.
 function walletCard(ws) {
   const w = Money.week(ws);
@@ -1033,9 +1033,10 @@ function walletCard(ws) {
   const left = w.got - spent;
   const pctLeft = w.got > 0 ? Math.max(0, Math.min(100, left / w.got * 100)) : 0;
   const level = left < 0 ? 'hit' : pctLeft <= 25 ? 'warn' : '';
-  const daysLeft = 7 - (U.weekdayMon(today) + 1) % 7; // including today
+  const weekday = current && !Money.isWeekend(today);
+  const daysLeft = 5 - U.weekdayMon(today); // including today
   const daily = w.got / SPEND_DAYS;
-  const spentToday = current ? Money.dayTotal(Money.list(today, today)) : 0;
+  const spentToday = weekday ? Money.dayTotal(Money.list(today, today)) : 0;
   return `<div class="card wallet ${level}">
     ${head}
     <div class="w-left">
@@ -1049,9 +1050,10 @@ function walletCard(ws) {
       <div><span>Spent</span><b>${Money.fmt(spent, false)}</b></div>
       <div><span>Daily limit</span><b>${Money.fmt(daily, false)}</b></div>
     </div>
-    ${current ? todayBlock(spentToday, daily) : ''}
+    ${weekday ? todayBlock(spentToday, daily) : ''}
+    ${w.offWeek > 0 ? `<p class="muted small w-note">🌴 Weekend <b>${Money.fmt(w.offWeek, false)}</b> · not taken from the week's money</p>` : ''}
     ${extra > 0 ? `<p class="small w-note">🧾 Extra this week <b>${Money.fmt(extra, false)}</b> · taken off when the week ends</p>` : ''}
-    ${current ? `<p class="muted small w-note">${daysLeft} day${daysLeft === 1 ? '' : 's'} left until Saturday · daily limit = money ÷ ${SPEND_DAYS}</p>` : ''}
+    ${weekday ? `<p class="muted small w-note">${daysLeft} day${daysLeft === 1 ? '' : 's'} left until Friday · daily limit = money ÷ ${SPEND_DAYS}</p>` : ''}
     <button type="button" class="linkbtn" data-act="setAllow" data-v="${ws}">Edit week's money</button>
     ${foot}
   </div>`;
@@ -1194,11 +1196,12 @@ function renderWeek(ws) {
       <div class="tile"><span>Week's money</span><b>${w.a ? Money.fmtOrig(w.a) : '–'}</b>${w.a && w.a.cur === 'KHR' ? `<small>= ${Money.fmt(w.got, false)}</small>` : ''}</div>
       <div class="tile"><span>Spent</span><b>${Money.fmt(w.spent, false)}</b><small>${w.list.length} item${w.list.length === 1 ? '' : 's'}</small></div>
       <div class="tile"><span>${w.left < 0 ? 'Over budget' : 'Left over'}</span><b class="${w.a ? U.cls(w.left) : ''}">${w.a ? Money.fmt(Math.abs(w.left), false) : '–'}</b></div>
-      <div class="tile"><span>Avg / day</span><b>${Money.fmt(w.spent / 7, false)}</b></div>
+      <div class="tile"><span>Avg / day</span><b>${Money.fmt(w.spent / SPEND_DAYS, false)}</b><small>Mon–Fri</small></div>
     </div>
+    ${w.offWeek > 0 ? `<p class="muted small">🌴 Weekend spending ${Money.fmt(w.offWeek, false)} isn't taken from the week's money.</p>` : ''}
     <button type="button" class="btn ghost block" data-act="setAllow" data-v="${ws}">${w.a ? "Edit week's money" : "+ Add week's money"}</button>
     ${catBreakdown(w.list)}
-    ${w.list.length ? expGroups(w.list) : '<p class="empty">No spending this week.</p>'}`;
+    ${w.all.length ? expGroups(w.all) : '<p class="empty">No spending this week.</p>'}`;
 }
 
 function openWeek(ws) {

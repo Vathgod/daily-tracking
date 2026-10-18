@@ -143,8 +143,11 @@ const Money = {
     return total / days;
   },
 
-  // Spending weeks run Sunday to Saturday (the week's money comes on Sunday).
-  // Each week stands alone: what's left stays with that week.
+  // Spending weeks run Sunday to Saturday (the week's money comes on Sunday),
+  // but the money is only for Monday to Friday: weekend spending is kept, just
+  // not taken from it. Each week stands alone: what's left stays with that week.
+  isWeekend(d) { return U.weekdayMon(d) >= 5; },
+
   weekStart(d) { return U.addDays(d, -((U.weekdayMon(d) + 1) % 7)); },
 
   weekLabel(ws) {
@@ -164,10 +167,12 @@ const Money = {
 
   week(ws) {
     const a = Money.allowance(ws);
-    const list = Money.list(ws, U.addDays(ws, 6));
+    const all = Money.list(ws, U.addDays(ws, 6));
+    const list = all.filter(e => !Money.isWeekend(e.date));
+    const weekend = all.filter(e => Money.isWeekend(e.date));
     const spent = Money.total(list);
     const got = a ? Money.usd(a) : NaN;
-    return { ws, a, list, spent, got, left: got - spent };
+    return { ws, a, all, list, weekend, spent, offWeek: Money.total(weekend), got, left: got - spent };
   },
 
   // Sundays of every week with money set or spending, newest first.
@@ -200,21 +205,23 @@ const Money = {
     };
   },
 
-  // Spent from Sunday up to the same weekday as today, in the week starting `ws`.
+  // Spent from Monday up to the same weekday as today (Friday at most), in the week starting `ws`.
   soFar(ws) {
-    const days = (U.weekdayMon(U.today()) + 1) % 7;
-    return Money.total(Money.list(ws, U.addDays(ws, days)));
+    const days = Math.min(5, (U.weekdayMon(U.today()) + 1) % 7);
+    return Money.total(Money.list(U.addDays(ws, 1), U.addDays(ws, days)));
   },
 
   // Average spent on each weekday (Sun..Sat) over the given weeks.
   byWeekday(weeks) {
     const t = [0, 0, 0, 0, 0, 0, 0];
-    for (const w of weeks) for (const e of w.list) t[(U.weekdayMon(e.date) + 1) % 7] += Money.usd(e);
+    for (const w of weeks) for (const e of w.all) t[(U.weekdayMon(e.date) + 1) % 7] += Money.usd(e);
     return t.map(v => (weeks.length ? v / weeks.length : 0));
   },
 
-  // The week's money is meant for 5 spending days, so the daily limit is a fifth of it.
+  // The week's money is meant for Monday to Friday, so the daily limit is a fifth
+  // of it, and there's no limit on the weekend.
   dailyBudget(date) {
+    if (Money.isWeekend(date)) return 0;
     const a = Money.allowance(Money.weekStart(date));
     return a ? Money.usd(a) / SPEND_DAYS : 0;
   },
