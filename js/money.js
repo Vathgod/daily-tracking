@@ -99,6 +99,10 @@ const Money = {
 
   total(list) { return list.reduce((s, e) => s + Money.usd(e), 0); },
 
+  // Extra spending (a laptop, rent...) still counts in the week, but not
+  // against the daily limit.
+  dayTotal(list) { return Money.total(list.filter(e => !e.extra)); },
+
   // [{ id, usd, n }] biggest first
   byCat(list) {
     const g = {};
@@ -121,10 +125,10 @@ const Money = {
     return Object.keys(METHODS).filter(k => m[k] > 0).map(k => `${METHODS[k]} ${Money.fmt(m[k], false)}`).join(' · ');
   },
 
-  // date -> $ spent
-  byDay(from, to) {
+  // date -> $ spent (leaving out extra spending when `daily` is set)
+  byDay(from, to, daily = false) {
     const m = {};
-    for (const e of Money.list(from, to)) m[e.date] = (m[e.date] || 0) + Money.usd(e);
+    for (const e of Money.list(from, to)) if (!daily || !e.extra) m[e.date] = (m[e.date] || 0) + Money.usd(e);
     return m;
   },
 

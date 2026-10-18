@@ -946,7 +946,7 @@ function saveAcct() {
 
 function expRow(e) {
   const c = Money.cat(e.cat);
-  const meta = [e.time, METHODS[methodOf(e.method)]].filter(Boolean).map(U.esc).join(' · ');
+  const meta = [e.time, METHODS[methodOf(e.method)], e.extra && '🧾 Extra'].filter(Boolean).map(U.esc).join(' · ');
   return `<button type="button" class="exp" data-act="openExp" data-id="${e.id}">
     <span class="ex-emo" aria-hidden="true">${U.esc(c.emoji || '•')}</span>
     <span class="ex-main"><b>${U.esc(c.name)}</b><small>${meta}</small>${e.note ? `<small class="note">${U.esc(e.note)}</small>` : ''}</span>
@@ -963,7 +963,7 @@ function expGroups(list) {
   return [...groups].map(([date, items]) => {
     const t = Money.total(items);
     const limit = Money.dailyBudget(date);
-    return `<h3 class="dayhead"><span>${U.esc(U.dayLabel(date))}</span><span class="${limit && t > limit ? 'neg' : ''}">${Money.fmt(t, false)}</span></h3>
+    return `<h3 class="dayhead"><span>${U.esc(U.dayLabel(date))}</span><span class="${limit && Money.dayTotal(items) > limit ? 'neg' : ''}">${Money.fmt(t, false)}</span></h3>
       <div class="explist">${items.map(expRow).join('')}</div>`;
   }).join('');
 }
@@ -1031,7 +1031,7 @@ function walletCard(ws) {
   const level = w.left < 0 ? 'hit' : pctLeft <= 25 ? 'warn' : '';
   const daysLeft = 7 - (U.weekdayMon(today) + 1) % 7; // including today
   const daily = w.got / SPEND_DAYS;
-  const spentToday = current ? Money.total(Money.list(today, today)) : 0;
+  const spentToday = current ? Money.dayTotal(Money.list(today, today)) : 0;
   return `<div class="card wallet ${level}">
     ${head}
     <div class="w-left">
@@ -1106,7 +1106,7 @@ function viewMoney() {
   const m = Money.byMethod(list);
 
   return `<section class="view">
-    ${spendBanner(spent)}
+    ${spendBanner(Money.dayTotal(todays))}
     ${lastWeekRecap()}
     ${walletCard(walletWeek())}
     <div class="card statrow">
@@ -1226,6 +1226,7 @@ function openExpForm(id, date) {
   f.date.value = e ? e.date : date || U.today();
   f.time.value = e ? e.time || '' : U.nowTime();
   f.note.value = e ? e.note || '' : '';
+  f.extra.checked = !!(e && e.extra);
   $('#delExp').hidden = !e;
   expHint();
   $('#expDlg').showModal();
@@ -1239,8 +1240,10 @@ function expHint() {
   const usd = Money.usd({ amount: v, cur });
   let txt = Money.nz() ? '' : cur === 'KHR' ? `= ${Money.fmt(usd, false)}` : `= ${Money.fmtKHR(v * KHR_PER_USD)}`;
   const limit = f.date.value ? Money.dailyBudget(f.date.value) : 0;
-  if (limit) {
-    const before = Money.total(Money.list(f.date.value, f.date.value).filter(e => e.id !== eform.id));
+  if (limit && f.extra.checked) {
+    txt += `${txt ? ' · ' : ''}not counted in the daily limit`;
+  } else if (limit) {
+    const before = Money.dayTotal(Money.list(f.date.value, f.date.value).filter(e => e.id !== eform.id));
     txt += `${txt ? ' · ' : ''}${f.date.value === U.today() ? 'today' : 'that day'} will be ${Money.fmt(before + usd, false)} of the ${Money.fmt(limit, false)} daily limit`;
   }
   $('#expHint').textContent = txt;
@@ -1256,7 +1259,7 @@ function saveExp() {
   if (!f.date.value) return toast('Set the date.');
   const old = eform.id ? Store.get('expenses', eform.id) : null;
   const date = f.date.value;
-  const before = Money.total(Money.list(date, date).filter(e => e.id !== eform.id));
+  const before = Money.dayTotal(Money.list(date, date).filter(e => e.id !== eform.id));
   const item = {
     ...(old || { id: U.uid(), createdAt: Date.now() }),
     amount: String(cur === 'KHR' ? Math.round(amt) : Math.round(amt * 100) / 100),
@@ -1264,6 +1267,7 @@ function saveExp() {
     method: methodOf(f.method.value),
     date, time: f.time.value,
     note: f.note.value.trim(),
+    extra: f.extra.checked,
   };
   Store.upsert('expenses', item);
   if (cur !== 'NZD') lsSet('dt.lastCur', cur);
@@ -1272,7 +1276,7 @@ function saveExp() {
   toast(old ? 'Expense updated' : `Saved ${Money.fmt(Money.usd(item), false)}`);
   const limit = Money.dailyBudget(date);
   const after = before + Money.usd(item);
-  if (limit && date === U.today() && after > limit) {
+  if (limit && !item.extra && date === U.today() && after > limit) {
     setTimeout(() => toast(`🛑 Over today's limit by ${Money.fmt(after - limit, false)}.`), 2700);
   }
 }
@@ -1339,7 +1343,7 @@ function moneyMonthStats(first, last, spend) {
   // Average over the days of the month so far (all of it for past months).
   const avg = Money.perDay(total, first, last < today ? last : today);
   const limit = Money.dailyBudget(today) || Object.keys(spend).some(Money.dailyBudget);
-  const over = Object.entries(spend).filter(([d, v]) => Money.dailyBudget(d) && v > Money.dailyBudget(d)).length;
+  const over = Object.entries(Money.byDay(first, last, true)).filter(([d, v]) => Money.dailyBudget(d) && v > Money.dailyBudget(d)).length;
   const top = Money.byCat(Money.list(first, last))[0];
   return `<div class="card statrow">
       <div><span>Month spent</span><b>${Money.fmt(total, false)}</b></div>
@@ -1369,6 +1373,7 @@ function viewCalendar() {
   const tasksMode = ui.calMode === 'tasks';
   const moneyMode = ui.calMode === 'money';
   const spend = moneyMode ? Money.byDay(first, last) : {};
+  const daySpend = moneyMode ? Money.byDay(first, last, true) : {};
   let cells = '';
   for (let i = 0; i < U.weekdayMon(first); i++) cells += '<span class="day blank"></span>';
   for (let d = 1; d <= days; d++) {
@@ -1377,7 +1382,7 @@ function viewCalendar() {
     const pct = b && b.tasks ? b.done / b.tasks * 100 : NaN;
     const sp = spend[ds] || 0;
     const limit = moneyMode ? Money.dailyBudget(ds) : 0;
-    const cls = moneyMode ? (sp > 0 ? (limit ? (sp > limit ? 'neg' : 'pos') : 'spent') : '')
+    const cls = moneyMode ? (sp > 0 ? (limit ? ((daySpend[ds] || 0) > limit ? 'neg' : 'pos') : 'spent') : '')
       : tasksMode ? (b && b.tasks && (ds < today || pct >= 100) ? 'b-' + Perf.band(pct) : '') : b && b.n ? U.cls(b.pnl) : '';
     const main = moneyMode ? (sp > 0 ? `<span class="dp">${Money.short(sp)}</span>` : '')
       : tasksMode
@@ -1395,7 +1400,7 @@ function viewCalendar() {
     const ex = Money.list(sel, sel);
     const t = Money.total(ex);
     detail = `<div class="card">
-      <h3 class="dayhead"><span>${U.esc(U.dayLabel(sel))}</span>${ex.length ? `<span class="${Money.dailyBudget(sel) && t > Money.dailyBudget(sel) ? 'neg' : ''}">${Money.fmt(t, false)}</span>` : ''}</h3>
+      <h3 class="dayhead"><span>${U.esc(U.dayLabel(sel))}</span>${ex.length ? `<span class="${Money.dailyBudget(sel) && Money.dayTotal(ex) > Money.dailyBudget(sel) ? 'neg' : ''}">${Money.fmt(t, false)}</span>` : ''}</h3>
       ${ex.length ? `<div class="explist">${ex.map(expRow).join('')}</div>` : '<p class="muted small">No spending.</p>'}
       <button type="button" class="btn ghost block addday" data-act="addExp" data-v="${sel}">+ Add expense for this day</button>
     </div>`;
@@ -1904,7 +1909,7 @@ function reviewSpending(from) {
   const cats = Money.byCat(list);
   const m = Money.byMethod(list);
   const limit = Money.dailyBudget(ws);
-  const over = limit ? Object.values(Money.byDay(ws, U.addDays(ws, 6))).filter(v => v > limit).length : 0;
+  const over = limit ? Object.values(Money.byDay(ws, U.addDays(ws, 6), true)).filter(v => v > limit).length : 0;
   return `<h3 class="sub spend">💰 Spending</h3>
     <p class="muted small">${U.esc(Money.weekLabel(ws))}</p>
     <div class="tiles">
