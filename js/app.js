@@ -607,11 +607,16 @@ function tradeCard(t) {
     </div>
     <div class="r2">
       <span>${U.esc(t.time || '')} ${sessTag(c.session)}</span>
-      <span>${meta}${t.shot ? ' · 📷' : ''}</span>
+      <span>${meta}${shotCount(t)}</span>
     </div>
     ${tradeTags(t)}
     ${t.note ? `<div class="note">${U.esc(t.note)}</div>` : ''}
   </button>`;
+}
+
+function shotCount(t) {
+  const n = Store.shotsOf(t).length;
+  return n ? ` · 📷${n > 1 ? ' ' + n : ''}` : '';
 }
 
 function tradeTags(t) {
@@ -693,7 +698,9 @@ function viewTrades() {
 
 // ---------- Trade form ----------
 
-const form = { id: null, shot: null, pnlTouched: false };
+const form = { id: null, shots: [], pnlTouched: false };
+const MAX_SHOTS = 4;
+const SHOT_TFS = ['1m', '3m', '5m', '15m'];
 
 function pointValue(pair) { return Pairs.value(pair); }
 
@@ -711,7 +718,7 @@ function openTradeForm(id) {
   const t = id ? Store.get('trades', id) : null;
   const f = $('#tradeForm');
   form.id = id || null;
-  form.shot = t ? t.shot || null : null;
+  form.shots = Store.shotsOf(t).map(x => ({ ...x }));
   f.reset();
   $('#tradeTitle').textContent = t ? 'Edit trade' : 'New trade';
   const accts = Acct.all().filter(a => Acct.stats(a).status === 'active' || (t && t.accountId === a.id));
@@ -794,21 +801,64 @@ function updatePreview() {
     cell('Session', c.session);
 }
 
+// Next unused default label, so the 1st photo is 1m, the 2nd 3m, and so on.
+function nextTf() {
+  return SHOT_TFS.find(tf => !form.shots.some(x => x.tf === tf)) || '';
+}
+
+let shotRender = 0;
+
 async function renderShotPreview() {
   const box = $('#shotBox');
-  if (!form.shot) {
-    box.innerHTML = '<label class="btn ghost block filebtn">📷 Add chart screenshot<input type="file" accept="image/*" id="shotInput" hidden></label>';
+  const run = ++shotRender;
+  const add = inner => `<input type="file" accept="image/*" id="shotInput" multiple hidden>${inner}`;
+  if (!form.shots.length) {
+    box.innerHTML = `<label class="btn ghost block filebtn">${add('📷 Add chart screenshots (up to 4)')}</label>`;
     return;
   }
-  box.innerHTML = '<div class="shot loading">Loading screenshot…</div>';
-  try {
-    const url = await Store.shotUrl(form.shot);
-    box.innerHTML = url
-      ? `<div class="shot"><img src="${url}" alt="Chart screenshot" data-act="viewShot"><button type="button" class="mini" data-act="removeShot">Remove</button></div>`
-      : '<div class="shot loading">Screenshot not available on this device yet.</div>';
-  } catch (e) {
-    box.innerHTML = `<div class="shot loading">Could not load screenshot: ${U.esc(e.message)}</div>`;
+  box.innerHTML = `<div class="shots">${form.shots.map((x, i) => `<div class="shot">
+      <div class="thumb loading" data-i="${i}">…</div>
+      <button type="button" class="x" data-act="removeShot" data-i="${i}" aria-label="Remove screenshot">×</button>
+      <input class="tf" data-shot="${i}" value="${U.esc(x.tf || '')}" maxlength="12" placeholder="Label" aria-label="Timeframe">
+    </div>`).join('')}${form.shots.length < MAX_SHOTS ? `<label class="shot add filebtn">${add('<b>+</b><span>Add</span>')}</label>` : ''}</div>`;
+  for (const [i, x] of form.shots.entries()) {
+    let html;
+    try {
+      const url = await Store.shotUrl(x);
+      html = url ? `<img src="${url}" alt="${U.esc(x.tf || 'Chart')} screenshot" data-act="viewShot" data-i="${i}">` : 'Not on this device yet';
+    } catch (e) {
+      html = 'Could not load';
+    }
+    if (run !== shotRender) return;
+    const cell = box.querySelector(`.thumb[data-i="${i}"]`);
+    if (cell) { cell.innerHTML = html; cell.classList.toggle('loading', !html.startsWith('<img')); }
   }
+}
+
+async function addShots(files) {
+  const room = MAX_SHOTS - form.shots.length;
+  if (files.length > room) toast(`Only ${MAX_SHOTS} screenshots per trade.`);
+  for (const file of files.slice(0, room)) {
+    try {
+      form.shots.push({ ...await Store.saveShot(file), tf: nextTf() });
+    } catch (err) {
+      toast(err.message);
+    }
+    renderShotPreview();
+  }
+}
+
+function viewShots(start) {
+  const imgs = $$('#shotBox img[data-i]');
+  const strip = $('#shotStrip');
+  strip.innerHTML = imgs.map(img => {
+    const x = form.shots[img.dataset.i];
+    const n = imgs.length > 1 ? `<span>${+img.dataset.i + 1} / ${form.shots.length}</span>` : '';
+    return `<figure class="slide"><img src="${img.src}" alt="${U.esc(x.tf || 'Chart')} screenshot"><figcaption>${U.esc(x.tf || '')}${n}</figcaption></figure>`;
+  }).join('');
+  $('#shotDlg').showModal();
+  const idx = imgs.findIndex(img => img.dataset.i === String(start));
+  strip.scrollLeft = strip.clientWidth * Math.max(0, idx);
 }
 
 function saveTrade() {
@@ -820,14 +870,16 @@ function saveTrade() {
   if (!isFinite(U.num(t.points))) return toast('Enter the points.');
   if (!isFinite(U.num(t.pnl))) return toast('Enter the PnL in $.');
   const old = form.id ? Store.get('trades', form.id) : null;
-  const item = { ...(old || { id: U.uid(), createdAt: Date.now() }), ...t, shot: form.shot || null };
-  if (!item.shot) delete item.shot;
+  const shots = form.shots.map(x => ({ ...x, tf: (x.tf || '').trim() }));
+  const item = { ...(old || { id: U.uid(), createdAt: Date.now() }), ...t, shots };
+  delete item.shot;
+  if (!shots.length) delete item.shots;
   if (!item.setup) delete item.setup;
   if (!item.mistakes.length) delete item.mistakes;
   // Older trades stored prices; points replace them.
   delete item.entry; delete item.sl; delete item.exit;
   Store.upsert('trades', item);
-  if (old && old.shot && (!form.shot || old.shot.id !== form.shot.id)) Store.deleteShot(old.shot);
+  for (const x of Store.shotsOf(old)) if (!shots.some(y => y.id === x.id)) Store.deleteShot(x);
   lsSet('dt.lastPair', t.pair);
   lsSet('dt.lastAcct', t.accountId);
   if (t.lot) lsSet('dt.lastLot', t.lot);
@@ -2185,8 +2237,8 @@ Past days and today stay as they are.`)) return;
   sync() { if (Store.config().token) Store.syncNow(); else openSettings(); },
   closeDlg(el) { el.closest('dialog').close(); },
   autoPnl() { form.pnlTouched = false; updatePreview(); },
-  removeShot() { form.shot = null; renderShotPreview(); },
-  viewShot(el) { $('#shotFull').src = el.src; $('#shotDlg').showModal(); },
+  removeShot(el) { form.shots.splice(+el.dataset.i, 1); renderShotPreview(); },
+  viewShot(el) { viewShots(el.dataset.i); },
   delTrade() {
     if (form.id && confirm('Delete this trade?')) {
       Store.remove('trades', form.id);
@@ -2253,14 +2305,10 @@ document.addEventListener('change', async e => {
     ui.planDate = el.value; render();
   } else if (el.id === 'statsFrom' || el.id === 'statsTo') {
     ui[el.id] = el.value; render();
-  } else if (el.id === 'shotInput' && el.files[0]) {
-    $('#shotBox').innerHTML = '<div class="shot loading">Preparing screenshot…</div>';
-    try {
-      form.shot = await Store.saveShot(el.files[0]);
-    } catch (err) {
-      toast(err.message);
-    }
-    renderShotPreview();
+  } else if (el.id === 'shotInput' && el.files.length) {
+    const files = [...el.files];
+    el.value = '';
+    addShots(files);
   } else if (el.id === 'importInput' && el.files[0]) {
     try {
       const n = Store.importJSON(await el.files[0].text());
@@ -2299,6 +2347,11 @@ document.addEventListener('change', async e => {
 
 document.addEventListener('input', e => {
   if (e.target.name === 'pnl') form.pnlTouched = e.target.value.trim() !== '';
+  if (e.target.dataset.shot) {
+    const x = form.shots[e.target.dataset.shot];
+    if (x) x.tf = e.target.value;
+    return;
+  }
   if (e.target.closest('#tradeForm')) updatePreview();
   else if (e.target.closest('#acctForm')) acctFormType();
   else if (e.target.closest('#expForm')) expHint();

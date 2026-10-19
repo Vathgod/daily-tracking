@@ -159,12 +159,12 @@ const Store = (() => {
   function remove(kind, id) {
     const it = state[kind][id];
     if (!it) return;
-    const shot = it.shot;
+    const shots = shotsOf(it);
     state[kind][id] = { id, deleted: true, updatedAt: Date.now() };
     persist();
     emit();
     scheduleSync();
-    if (shot) deleteShot(shot);
+    shots.forEach(deleteShot);
   }
 
   function setSettings(patch) {
@@ -255,16 +255,27 @@ const Store = (() => {
 
   async function uploadPendingShots(s) {
     for (const t of Object.values(s.trades)) {
-      if (t.deleted || !t.shot || t.shot.store !== 'local') continue;
-      const blob = await idb.get(t.shot.id);
-      if (!blob) continue;
-      const path = `shots/${t.shot.id}.jpg`;
-      const r = await api('/contents/' + path, {
-        method: 'PUT',
-        body: JSON.stringify({ message: 'Add screenshot', content: await blobToB64(blob) }),
-      });
-      if (!r.ok && r.status !== 422) throw await apiError(r); // 422 = already uploaded
-      s.trades[t.id] = { ...t, shot: { id: t.shot.id, store: 'gh', path }, updatedAt: Date.now() };
+      if (t.deleted) continue;
+      const shots = shotsOf(t);
+      if (!shots.some(x => x.store === 'local')) continue;
+      const done = [];
+      let changed = false;
+      for (const x of shots) {
+        const blob = x.store === 'local' && await idb.get(x.id);
+        if (!blob) { done.push(x); continue; }
+        const path = `shots/${x.id}.jpg`;
+        const r = await api('/contents/' + path, {
+          method: 'PUT',
+          body: JSON.stringify({ message: 'Add screenshot', content: await blobToB64(blob) }),
+        });
+        if (!r.ok && r.status !== 422) throw await apiError(r); // 422 = already uploaded
+        done.push({ id: x.id, store: 'gh', path, tf: x.tf });
+        changed = true;
+      }
+      if (!changed) continue;
+      const next = { ...t, shots: done, updatedAt: Date.now() };
+      delete next.shot;
+      s.trades[t.id] = next;
     }
   }
 
@@ -337,6 +348,13 @@ const Store = (() => {
   }
 
   // ---------- Screenshots ----------
+
+  // A trade holds up to 4 screenshots in `shots`; older trades had one `shot`.
+  function shotsOf(t) {
+    if (!t) return [];
+    if (Array.isArray(t.shots)) return t.shots;
+    return t.shot ? [{ ...t.shot, tf: '1m' }] : [];
+  }
 
   async function compress(file) {
     const url = URL.createObjectURL(file);
@@ -415,7 +433,7 @@ const Store = (() => {
 
   return {
     load, list, upsert, addQuiet, remove, setSettings, syncNow, testConnection, setConfig,
-    saveShot, shotUrl, deleteShot, exportJSON, importJSON,
+    saveShot, shotUrl, deleteShot, shotsOf, exportJSON, importJSON,
     get: (kind, id) => state[kind][id],
     settings: () => state.settings,
     config: () => ({ ...cfg }),
