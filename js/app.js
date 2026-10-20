@@ -1447,7 +1447,7 @@ function viewCalendar() {
     const main = moneyMode ? (sp > 0 ? `<span class="dp">${Money.short(sp)}</span>` : '')
       : tasksMode
       ? b && b.tasks ? `<span class="dp">${Math.round(pct)}%</span><span class="dt">${b.done}/${b.tasks}</span>` : ''
-      : `${b && b.n ? `<span class="dp">${U.moneyShort(b.pnl)}</span>` : ''}${b && b.tasks ? `<span class="dt${b.done === b.tasks ? ' all' : ''}">${b.done}/${b.tasks}</span>` : ''}`;
+      : b && b.n ? `<span class="dp">${U.moneyShort(b.pnl)}</span><span class="dt">${b.n} trade${b.n > 1 ? 's' : ''}</span>` : '';
     cells += `<button type="button" class="day ${cls}${ds === today ? ' today' : ''}${ds === ui.calDay ? ' sel' : ''}" data-act="calDay" data-v="${ds}">
       <span class="dn">${d}</span>${main}
     </button>`;
@@ -1466,13 +1466,10 @@ function viewCalendar() {
     </div>`;
   } else if (sel) {
     const st = tradesIn(sel, sel);
-    const tk = tasksOn(sel);
     const p = sumPnl(st);
     detail = `<div class="card">
       <h3 class="dayhead"><span>${U.esc(U.dayLabel(sel))}</span>${st.length ? `<span class="${U.cls(p)}">${U.money(p)}</span>` : ''}</h3>
       ${st.length ? `<div class="tradelist">${st.map(tradeCard).join('')}</div>` : '<p class="muted small">No trades.</p>'}
-      <h4 class="sub">Activities ${tk.length ? `<span class="muted">${tk.filter(t => t.done).length}/${tk.length}</span>` : ''}</h4>
-      ${tk.length ? `<ul class="tasks">${tk.map(t => taskRow(t, today)).join('')}</ul>` : '<p class="muted small">No activities.</p>'}
     </div>`;
   }
 
