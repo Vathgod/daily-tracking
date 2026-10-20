@@ -121,10 +121,10 @@ const U = {
   },
 
   moneyShort(n) {
-    if (!isFinite(n) || n === 0) return '0';
+    if (!isFinite(n) || n === 0) return '$0';
     const a = Math.abs(n);
     const s = a >= 1000 ? (a / 1000).toFixed(a >= 10000 ? 0 : 1) + 'k' : Math.round(a).toString();
-    return (n > 0 ? '+' : '−') + s;
+    return (n > 0 ? '+$' : '−$') + s;
   },
 
   fmtMove(move, unit) {
