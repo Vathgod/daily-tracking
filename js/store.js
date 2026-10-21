@@ -38,7 +38,7 @@ const Store = (() => {
   const LS_STATE = 'dt.state';
   const LS_CFG = 'dt.config';
   const DATA_PATH = 'data.json';
-  const KINDS = ['tasks', 'trades', 'accounts', 'expenses', 'categories', 'allowances', 'pairs', 'routines', 'tags'];
+  const KINDS = ['tasks', 'trades', 'accounts', 'expenses', 'categories', 'allowances', 'pairs', 'routines', 'tags', 'notes'];
 
   let state = blank();
   const cfg = { owner: '', repo: 'daily-tracking-data', token: '' };
@@ -51,7 +51,7 @@ const Store = (() => {
   const shotUrls = new Map();
 
   function blank() {
-    return { tasks: {}, trades: {}, accounts: {}, expenses: {}, categories: {}, allowances: {}, pairs: {}, routines: {}, tags: {}, settings: { lossLimit: 0, updatedAt: 0 } };
+    return { tasks: {}, trades: {}, accounts: {}, expenses: {}, categories: {}, allowances: {}, pairs: {}, routines: {}, tags: {}, notes: {}, settings: { lossLimit: 0, updatedAt: 0 } };
   }
 
   function normalize(o) {
@@ -71,6 +71,7 @@ const Store = (() => {
       put(s.pairs, o.pairs);
       put(s.routines, o.routines);
       put(s.tags, o.tags);
+      put(s.notes, o.notes);
       if (o.settings) s.settings = { ...s.settings, ...o.settings };
     }
     return s;
@@ -90,6 +91,7 @@ const Store = (() => {
       pairs: Object.values(s.pairs).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)),
       routines: Object.values(s.routines).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)),
       tags: Object.values(s.tags).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)),
+      notes: Object.values(s.notes).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)),
     };
   }
 

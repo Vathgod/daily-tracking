@@ -288,6 +288,52 @@ body[data-tab="plan"] .toast { bottom: calc(var(--tabbar-h, 64px) + 72px); }
 .dailylist li { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .dailyacts { display: flex; gap: 6px; flex-shrink: 0; }
 
+/* ---------- Notes ---------- */
+.planswitch { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; background: var(--surface-2); padding: 4px; border-radius: 12px; }
+.planswitch button {
+  border: 0; background: none; padding: 9px 4px; border-radius: 9px; font-weight: 700; font-size: 14px; color: var(--muted);
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+}
+.planswitch button.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, .15); }
+.nbadge {
+  display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px;
+  font-size: 11px; background: color-mix(in srgb, var(--violet) 22%, transparent); color: var(--violet);
+}
+.nbadge.hot { background: var(--neg); color: #fff; }
+.task.notecard { flex-wrap: wrap; }
+.task.notecard .text { flex: 1; padding: 6px 0; }
+.task.notecard .due { font-weight: 600; }
+.task.notecard.u-late, .task.notecard.u-soon { border-left-color: var(--neg); }
+.task.notecard.u-late .due, .task.notecard.u-soon .due { color: var(--neg); }
+.task.notecard.u-week { border-left-color: var(--amber); }
+.task.notecard.u-week .due { color: var(--amber); }
+.task.notecard.u-later, .task.notecard.u-none { border-left-color: var(--border); }
+.planit { background: color-mix(in srgb, var(--violet) 18%, transparent); color: var(--violet); padding: 6px 9px; }
+.notepick { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 2px 0 6px; }
+.notepick .mini { padding: 8px 10px; }
+.pickdate { position: relative; cursor: pointer; }
+.pickdate input, .duetog input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.duetog { flex: none; position: relative; display: flex; }
+.duetog span {
+  display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px;
+  font-size: 17px; filter: grayscale(1); opacity: .55; transition: background .15s, opacity .15s, filter .15s;
+}
+.duetog.set span { filter: none; opacity: 1; background: color-mix(in srgb, var(--amber) 22%, transparent); }
+.duetog input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 1px; }
+.duechip {
+  flex: none; border: 0; border-radius: 999px; padding: 4px 8px; margin-right: 2px;
+  background: var(--amber-bg); color: var(--amber); font-size: 12px; font-weight: 700; white-space: nowrap;
+}
+.noteedit { flex-wrap: wrap; }
+.noteedit #editInput { flex-basis: 100%; }
+.duefield { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.duefield input { border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 8px; padding: 6px 8px; }
+.editbtns { display: flex; gap: 6px; margin-left: auto; }
+.duecard .tasks { margin-top: 4px; }
+.day { position: relative; }
+.duepin { position: absolute; top: 2px; right: 1px; font-size: 8px; line-height: 1; filter: grayscale(1); opacity: .7; }
+.duepin.hot { filter: none; opacity: 1; }
+
 /* ---------- Trades ---------- */
 .hero { text-align: center; }
 .big { font-size: 34px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }

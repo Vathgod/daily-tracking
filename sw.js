@@ -1,5 +1,5 @@
 // Network first so updates show up right away; the cache is only used offline.
-const CACHE = 'daily-tracking-v24';
+const CACHE = 'daily-tracking-v25';
 const SHELL = [
   './',
   'index.html',

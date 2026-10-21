@@ -50,6 +50,12 @@ const U = {
     return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
   },
 
+  // Whole days from date a to date b (negative when b is earlier).
+  daysBetween(a, b) {
+    const t = s => { const [y, m, d] = s.split('-').map(Number); return Date.UTC(y, m - 1, d); };
+    return Math.round((t(b) - t(a)) / 864e5);
+  },
+
   // 0 = Monday ... 6 = Sunday
   weekdayMon(s) {
     const [y, m, d] = s.split('-').map(Number);

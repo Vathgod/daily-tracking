@@ -27,7 +27,11 @@ const ui = {
   doneOpen: false,
   missedOpen: false,
   manageOpen: false,
-  editing: null, // id of the activity being renamed
+  editing: null, // id of the activity or note being edited
+  planMode: lsGet('dt.planMode', 'plan'), // 'plan' or 'notes'
+  noteDue: '', // deadline picked for the note being typed
+  editDue: null, // deadline in the note edit box (null = not changed yet)
+  notePick: null, // id of the note whose "add to plan" day picker is open
 };
 
 // ---------- Helpers ----------
@@ -131,7 +135,108 @@ function taskList(list, today, opt) {
   return `<ul class="tasks">${list.map(t => taskRow(t, today, opt)).join('')}</ul>`;
 }
 
+// ---------- Notes ----------
+// Things to do some day: no day picked yet, maybe a deadline. "Add to plan"
+// turns one into an activity on a day and takes it off the notes list.
+
+function notesSorted() {
+  return Store.list('notes').sort((a, b) =>
+    (a.due || '9999-99-99').localeCompare(b.due || '9999-99-99') || (a.createdAt || 0) - (b.createdAt || 0));
+}
+
+// How close the deadline is: late/soon show red, week amber, later and none plain.
+function noteDue(n, today = U.today()) {
+  if (!n.due) return { cls: 'none', label: 'No deadline' };
+  const days = U.daysBetween(today, n.due);
+  const date = U.fmtDate(n.due, { weekday: 'short', day: 'numeric', month: 'short', ...(n.due.slice(0, 4) !== today.slice(0, 4) && { year: 'numeric' }) });
+  if (days < 0) return { cls: 'late', label: `Overdue · was due ${date}` };
+  if (days === 0) return { cls: 'soon', label: `Due today · ${date}` };
+  if (days === 1) return { cls: 'soon', label: `Due tomorrow · ${date}` };
+  return { cls: days <= 3 ? 'soon' : days <= 7 ? 'week' : 'later', label: `Due ${date} · ${days} days left` };
+}
+
+function isHot(n, today) { const c = noteDue(n, today).cls; return c === 'late' || c === 'soon'; }
+
+function noteRow(n, today) {
+  if (ui.editing === n.id) {
+    const due = ui.editDue ?? n.due ?? '';
+    return `<li class="task editing"><form class="editrow noteedit" data-id="${n.id}" data-kind="note" autocomplete="off">
+      <input id="editInput" value="${U.esc(n.text)}" maxlength="200" enterkeyhint="done" aria-label="Note">
+      <label class="duefield"><span>📅 Deadline</span><input type="date" id="editDue" value="${due}" aria-label="Deadline"></label>
+      ${due ? '<button type="button" class="mini" data-act="clearEditDue">No deadline</button>' : ''}
+      <span class="editbtns"><button type="submit" class="mini save">Save</button>
+      <button type="button" class="mini" data-act="cancelEdit">Cancel</button></span>
+    </form></li>`;
+  }
+  const d = noteDue(n, today);
+  return `<li class="task notecard u-${d.cls}">
+    <span class="text">${U.esc(n.text)}<small class="due">${U.esc(d.label)}</small></span>
+    <button type="button" class="mini planit" data-act="notePick" data-id="${n.id}" aria-expanded="${ui.notePick === n.id}">➕ Plan</button>
+    <button type="button" class="icon edit" data-act="editNote" data-id="${n.id}" aria-label="Edit">✏️</button>
+    <button type="button" class="icon del" data-act="delNote" data-id="${n.id}" aria-label="Delete">×</button>
+    ${ui.notePick === n.id ? `<div class="notepick">
+      <span class="muted small">Add to which day?</span>
+      <button type="button" class="mini" data-act="notePlan" data-id="${n.id}" data-v="${today}">Today</button>
+      <button type="button" class="mini" data-act="notePlan" data-id="${n.id}" data-v="${U.addDays(today, 1)}">Tomorrow</button>
+      <label class="mini pickdate">📅 Other day<input type="date" data-act="notePlanDate" data-id="${n.id}" min="${today}" aria-label="Pick a day"></label>
+    </div>` : ''}
+  </li>`;
+}
+
+function noteList(list, today) {
+  return `<ul class="tasks">${list.map(n => noteRow(n, today)).join('')}</ul>`;
+}
+
+function planSwitch() {
+  const today = U.today();
+  const notes = Store.list('notes');
+  const hot = notes.some(n => isHot(n, today));
+  return `<div class="planswitch" role="tablist">
+    <button type="button" role="tab" class="${ui.planMode === 'plan' ? 'on' : ''}" aria-selected="${ui.planMode === 'plan'}" data-act="planMode" data-v="plan">☑ Plan</button>
+    <button type="button" role="tab" class="${ui.planMode === 'notes' ? 'on' : ''}" aria-selected="${ui.planMode === 'notes'}" data-act="planMode" data-v="notes">📌 Notes${notes.length ? ` <span class="nbadge${hot ? ' hot' : ''}">${notes.length}</span>` : ''}</button>
+  </div>`;
+}
+
+function viewNotes() {
+  const today = U.today();
+  const notes = notesSorted();
+  const dueLabel = ui.noteDue ? U.fmtDate(ui.noteDue, { day: 'numeric', month: 'short' }) : '';
+  return `<section class="view">
+    ${planSwitch()}
+    ${notes.length ? `<div class="plansec">
+      <div class="sechead"><h3 class="sectitle">📌 Notes</h3><span class="muted small">Nearest deadline first</span></div>
+      ${noteList(notes, today)}
+    </div>` : `<div class="emptyday">
+      <div class="ed-emo" aria-hidden="true">📌</div>
+      <b>Nothing noted</b>
+      <p class="muted small">Write things you need to do but haven't picked a day for.<br>Tap 📅 to add a deadline. Tap ➕ Plan when you're ready to do it.</p>
+    </div>`}
+
+    <form id="noteForm" class="addrow dock" autocomplete="off">
+      <div class="addfield">
+        <input id="noteInput" placeholder="${ui.noteDue ? `Note due ${U.esc(dueLabel)}…` : 'Write a note…'}" maxlength="200" enterkeyhint="done">
+        <button type="button" class="addclear" data-act="clearNote" aria-label="Clear">×</button>
+        ${ui.noteDue ? `<button type="button" class="duechip" data-act="clearNoteDue" aria-label="Remove deadline">${U.esc(dueLabel)} ×</button>` : ''}
+        <label class="duetog${ui.noteDue ? ' set' : ''}" title="Deadline"><input type="date" id="noteDue" value="${ui.noteDue}" aria-label="Deadline"><span>📅</span></label>
+      </div>
+      <button class="btn primary addbtn" type="submit" aria-label="Add">+</button>
+    </form>
+  </section>`;
+}
+
+function planNote(id, date) {
+  const n = Store.get('notes', id);
+  if (!n || n.deleted || !date) return;
+  const today = U.today();
+  ui.notePick = null;
+  Store.upsert('tasks', { id: U.uid(), text: n.text, date, done: false, createdAt: Date.now(), fromNote: n.id });
+  Store.remove('notes', n.id);
+  toast(date === today ? "Added to today's plan" : date === U.addDays(today, 1) ? "Added to tomorrow's plan"
+    : `Added to the plan for ${U.fmtDate(date, { weekday: 'short', day: 'numeric', month: 'short' })}`);
+}
+
 function viewPlan() {
+  if (ui.planMode === 'notes') return viewNotes();
   const today = U.today();
   const tomorrow = U.addDays(today, 1);
   const d = ui.planDate;
@@ -151,6 +256,7 @@ function viewPlan() {
   const otherLabel = d === today ? 'Today' : d === tomorrow ? 'Tomorrow' : 'This day';
 
   return `<section class="view">
+    ${planSwitch()}
     <div class="card planhead">
       <div class="ring${tasks.length && pct === 100 ? ' full' : ''}" style="--p:${pct}"><b>${tasks.length ? pct + '%' : '–'}</b></div>
       <div class="ph-main">
@@ -218,6 +324,15 @@ function saveEdit(id, text) {
   } else {
     Store.upsert('tasks', { ...t, text });
   }
+}
+
+function saveNote(id, text, due) {
+  const n = Store.get('notes', id);
+  if (!text) return toast('Type the note, or tap Cancel.');
+  ui.editing = null;
+  ui.editDue = null;
+  if (!n || n.deleted || (text === n.text && due === (n.due || ''))) return render();
+  Store.upsert('notes', { ...n, text, due });
 }
 
 function emptyDay(d, today) {
@@ -1434,6 +1549,8 @@ function viewCalendar() {
   const moneyMode = ui.calMode === 'money';
   const spend = moneyMode ? Money.byDay(first, last) : {};
   const daySpend = moneyMode ? Money.byDay(first, last, true) : {};
+  const dueBy = {};
+  if (tasksMode) for (const n of notesSorted()) if (n.due >= first && n.due <= last) (dueBy[n.due] ||= []).push(n);
   let cells = '';
   for (let i = 0; i < U.weekdayMon(first); i++) cells += '<span class="day blank"></span>';
   for (let d = 1; d <= days; d++) {
@@ -1448,8 +1565,10 @@ function viewCalendar() {
       : tasksMode
       ? b && b.tasks ? `<span class="dp">${Math.round(pct)}%</span><span class="dt">${b.done}/${b.tasks}</span>` : ''
       : b && b.n ? `<span class="dp">${U.moneyShort(b.pnl)}</span><span class="dt">${b.n} trade${b.n > 1 ? 's' : ''}</span>` : '';
+    const due = dueBy[ds];
+    const pin = due ? `<span class="duepin${due.some(n => isHot(n, today)) ? ' hot' : ''}" title="${due.length} due">📌${due.length > 1 ? due.length : ''}</span>` : '';
     cells += `<button type="button" class="day ${cls}${ds === today ? ' today' : ''}${ds === ui.calDay ? ' sel' : ''}" data-act="calDay" data-v="${ds}">
-      <span class="dn">${d}</span>${main}
+      <span class="dn">${d}</span>${main}${pin}
     </button>`;
   }
   const ms = Perf.summary(first, last);
@@ -1471,6 +1590,12 @@ function viewCalendar() {
       <h3 class="dayhead"><span>${U.esc(U.dayLabel(sel))}</span>${st.length ? `<span class="${U.cls(p)}">${U.money(p)}</span>` : ''}</h3>
       ${st.length ? `<div class="tradelist">${st.map(tradeCard).join('')}</div>` : '<p class="muted small">No trades.</p>'}
     </div>`;
+    if (dueBy[sel]) {
+      detail = `<div class="card duecard">
+        <h3 class="dayhead"><span>📌 Due · ${U.esc(U.dayLabel(sel))}</span></h3>
+        ${noteList(dueBy[sel], today)}
+      </div>` + detail;
+    }
   }
 
   return `<section class="view">
@@ -2059,6 +2184,8 @@ function render() {
   fillRoutines();
   const draft = $('#taskInput') ? $('#taskInput').value : '';
   const hadFocus = document.activeElement && document.activeElement.id === 'taskInput';
+  const noteDraft = $('#noteInput') ? $('#noteInput').value : '';
+  const noteFocus = document.activeElement && document.activeElement.id === 'noteInput';
   const editDraft = $('#editInput') && $('#editInput').closest('form').dataset.id === ui.editing ? $('#editInput').value : null;
   $('#view').innerHTML = VIEWS[ui.tab]();
   document.body.dataset.tab = ui.tab;
@@ -2066,6 +2193,8 @@ function render() {
   renderHeader();
   const ti = $('#taskInput');
   if (ti && draft) { ti.value = draft; if (hadFocus) ti.focus(); }
+  const ni = $('#noteInput');
+  if (ni && noteDraft) { ni.value = noteDraft; if (noteFocus) ni.focus(); }
   const ei = $('#editInput');
   if (ei) {
     if (editDraft !== null) ei.value = editDraft;
@@ -2100,7 +2229,18 @@ It will still come back on other days. To stop it for good, tap ⚙ Manage in th
     if (confirm(msg)) Store.remove('tasks', t.id);
   },
   editTask(el) { ui.editing = el.dataset.id; render(); },
-  cancelEdit() { ui.editing = null; render(); },
+  cancelEdit() { ui.editing = null; ui.editDue = null; render(); },
+  planMode(el) { ui.planMode = el.dataset.v; ui.notePick = null; ui.editing = null; lsSet('dt.planMode', ui.planMode); render(); },
+  clearNote() { const i = $('#noteInput'); i.value = ''; i.focus(); },
+  clearNoteDue() { ui.noteDue = ''; render(); $('#noteInput').focus(); },
+  notePick(el) { ui.notePick = ui.notePick === el.dataset.id ? null : el.dataset.id; render(); },
+  notePlan(el) { planNote(el.dataset.id, el.dataset.v); },
+  editNote(el) { ui.editing = el.dataset.id; ui.editDue = null; ui.notePick = null; render(); },
+  clearEditDue() { ui.editDue = ''; render(); },
+  delNote(el) {
+    const n = Store.get('notes', el.dataset.id);
+    if (n && confirm(`Delete note "${n.text}"?`)) Store.remove('notes', n.id);
+  },
   clearTask() { const i = $('#taskInput'); i.value = ''; i.focus(); },
   toggleDone() { ui.doneOpen = !ui.doneOpen; render(); },
   toggleMissed() { ui.missedOpen = !ui.missedOpen; render(); },
@@ -2285,6 +2425,11 @@ document.addEventListener('click', e => {
   if (fn) { e.preventDefault(); fn(el); }
 });
 
+// Date inputs hidden behind an icon or label: desktop browsers need showPicker() to open them.
+document.addEventListener('click', e => {
+  if (e.target.matches('.duetog input, .pickdate input')) try { e.target.showPicker(); } catch (err) { /* opens on its own */ }
+});
+
 document.addEventListener('change', async e => {
   const el = e.target;
   if (el.dataset.act === 'toggleTask') {
@@ -2298,6 +2443,12 @@ document.addEventListener('change', async e => {
     ui.dailyOn = el.checked;
     $('#taskInput').placeholder = el.checked ? 'Add a daily activity…' : 'Add an activity…';
     $('#taskInput').focus();
+  } else if (el.id === 'noteDue') {
+    ui.noteDue = el.value; render(); $('#noteInput').focus();
+  } else if (el.id === 'editDue') {
+    ui.editDue = el.value; render();
+  } else if (el.dataset.act === 'notePlanDate' && el.value) {
+    planNote(el.dataset.id, el.value);
   } else if (el.id === 'planDate' && el.value) {
     ui.planDate = el.value; render();
   } else if (el.id === 'statsFrom' || el.id === 'statsTo') {
@@ -2376,6 +2527,19 @@ document.addEventListener('submit', e => {
     }
     input.value = '';
     $('#taskInput').focus();
+  } else if (e.target.id === 'noteForm') {
+    e.preventDefault();
+    const input = $('#noteInput');
+    const text = input.value.trim();
+    if (!text) return;
+    const due = ui.noteDue;
+    input.value = '';
+    ui.noteDue = '';
+    Store.upsert('notes', { id: U.uid(), text, due, createdAt: Date.now() });
+    $('#noteInput').focus();
+  } else if (e.target.dataset.kind === 'note') {
+    e.preventDefault();
+    saveNote(e.target.dataset.id, $('#editInput').value.trim(), $('#editDue').value);
   } else if (e.target.classList.contains('editrow')) {
     e.preventDefault();
     saveEdit(e.target.dataset.id, $('#editInput').value.trim());
