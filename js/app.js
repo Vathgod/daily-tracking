@@ -2512,7 +2512,11 @@ document.addEventListener('submit', e => {
     const input = $('#taskInput');
     const text = input.value.trim();
     if (!text) return;
-    if ($('#taskDaily').checked) {
+    // Clear the box and 🔁 first: saving redraws the page and would put them back.
+    const daily = $('#taskDaily').checked;
+    input.value = '';
+    ui.dailyOn = false;
+    if (daily) {
       // New daily activities run Mon–Fri; added on a weekend, they start Monday.
       let start = ui.planDate;
       while (isWeekend(start)) start = U.addDays(start, 1);
@@ -2520,12 +2524,10 @@ document.addEventListener('submit', e => {
       if (start === ui.planDate) {
         Store.upsert('tasks', { id: routineTaskId(r.id, start), text, date: start, done: false, routine: r.id, createdAt: r.createdAt });
       }
-      ui.dailyOn = false;
       toast(start === ui.planDate ? 'Added. It will show up Mon–Fri.' : 'Added. It starts Monday and shows up Mon–Fri.');
     } else {
       Store.upsert('tasks', { id: U.uid(), text, date: ui.planDate, done: false, createdAt: Date.now() });
     }
-    input.value = '';
     $('#taskInput').focus();
   } else if (e.target.id === 'noteForm') {
     e.preventDefault();
