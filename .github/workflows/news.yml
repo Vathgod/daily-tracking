@@ -1,0 +1,49 @@
+name: News
+
+# Saves this week's Forex Factory calendar to news.json on the `news` branch
+# every hour. The app reads it in Calendar → News.
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency: news
+
+jobs:
+  news:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Download this week's calendar
+        run: |
+          curl -fsSL --retry 3 --retry-delay 30 -A "daily-tracking news (github.com/${{ github.repository }})" \
+            https://nfs.faireconomy.media/ff_calendar_thisweek.json -o feed.json
+          mkdir out
+          python3 - <<'EOF'
+          import datetime, json
+          events = json.load(open('feed.json'))
+          if not isinstance(events, list) or not events:
+              raise SystemExit('Feed is empty or not a list')
+          keep = ('title', 'country', 'date', 'impact', 'forecast', 'previous')
+          out = {
+              'updated': datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds'),
+              'events': [{k: e.get(k, '') for k in keep} for e in events],
+          }
+          json.dump(out, open('out/news.json', 'w'), separators=(',', ':'))
+          print(len(events), 'events')
+          EOF
+
+      - name: Save to the news branch
+        working-directory: out
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git init -q -b news
+          git add news.json
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -qm "Update news"
+          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" news

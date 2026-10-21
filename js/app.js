@@ -18,6 +18,8 @@ const ui = {
   statsTo: U.today(),
   statsSection: lsGet('dt.statsSec', 'trading'),
   calMode: 'pnl',
+  newsHigh: lsGet('dt.newsHigh', '1') === '1', // Calendar → News: high impact only
+  newsMine: lsGet('dt.newsMine', '1') === '1', // Calendar → News: only my pairs' currencies
   moneyRange: 'week',
   histAll: false,
   weekOpen: null,
@@ -1529,6 +1531,102 @@ function moneyMonthStats(first, last, spend) {
     ${limit ? `<div class="legend"><span><i class="lg-pos"></i>Within daily limit</span><span><i class="lg-neg"></i>Over daily limit</span></div>` : ''}`;
 }
 
+// ---------- Calendar: News ----------
+
+function loadNews(force) {
+  News.load(force).then(changed => {
+    if (changed && ui.tab === 'calendar' && ui.calMode === 'news') render();
+  });
+}
+
+function newsByDay() {
+  const by = {};
+  for (const e of News.filtered({ high: ui.newsHigh, mine: ui.newsMine })) {
+    const b = (by[e.date] ||= { n: 0 });
+    b.n++;
+    b[e.impact] = (b[e.impact] || 0) + 1;
+  }
+  return by;
+}
+
+// "in 45m", "in 3h 15m", "in 2d 4h"
+function fromNow(ms) {
+  const m = Math.max(0, Math.round((ms - Date.now()) / 60000));
+  if (m < 60) return `in ${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `in ${h}h ${m % 60}m`;
+  return `in ${Math.floor(h / 24)}d ${h % 24}h`;
+}
+
+// "5 min ago", "3h ago", "2 days ago"
+function timeAgo(iso) {
+  const m = Math.round((Date.now() - Date.parse(iso)) / 60000);
+  if (!isFinite(m)) return '';
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m} min ago`;
+  if (m < 48 * 60) return `${Math.round(m / 60)}h ago`;
+  return `${Math.round(m / 1440)} days ago`;
+}
+
+function newsStats() {
+  const curs = News.myCurs();
+  const filters = `<div class="chips">
+      <button type="button" class="chip${ui.newsHigh ? ' on' : ''}" data-act="newsHigh" aria-pressed="${ui.newsHigh}">🔴 High only</button>
+      ${curs.length ? `<button type="button" class="chip${ui.newsMine ? ' on' : ''}" data-act="newsMine" aria-pressed="${ui.newsMine}">💱 Only ${curs.join(' · ')}</button>` : ''}
+    </div>`;
+  if (!News.has()) {
+    return filters + `<div class="card">${News.loading() || !News.error()
+      ? '<p class="muted small">Loading news…</p>'
+      : `<p class="muted small">${U.esc(News.error())}</p><button type="button" class="btn ghost block" data-act="newsRetry">Try again</button>`}</div>`;
+  }
+  const now = Date.now();
+  const list = News.filtered({ high: false, mine: ui.newsMine });
+  const hi = list.filter(e => e.impact === 'High');
+  const next = hi.find(e => e.at > now);
+  const upd = News.updated();
+  return filters + `<div class="card statrow">
+      <div><span>🔴 High</span><b>${hi.length}</b></div>
+      <div><span>🟠 Medium</span><b>${list.filter(e => e.impact === 'Medium').length}</b></div>
+      <div><span>Next 🔴</span><b class="${next && next.at - now < 3600e3 ? 'neg' : ''}">${next ? fromNow(next.at) : '–'}</b></div>
+    </div>
+    ${next ? `<button type="button" class="nextnews" data-act="newsGo" data-v="${next.date}">
+      <span>🔴 Next: <b>${U.esc(next.cur)} ${U.esc(next.title)}</b></span><span>${U.esc(U.fmtDate(next.date, { weekday: 'short' }))} ${next.time}</span>
+    </button>` : ''}
+    <div class="legend">${IMPACTS.slice(0, 3).map(k => `<span><i class="im-${k.toLowerCase()}"></i>${k}</span>`).join('')}</div>
+    <p class="muted small newsnote">This week only${upd ? ` · updated ${timeAgo(upd)}` : ''}${News.error() ? ` · ${U.esc(News.error())}` : ''}</p>`;
+}
+
+function newsRow(e, now) {
+  const fp = [e.forecast && `Forecast ${e.forecast}`, e.previous && `Previous ${e.previous}`].filter(Boolean).join(' · ');
+  return `<div class="nrow im-${e.impact.toLowerCase()}${e.at < now ? ' past' : ''}">
+    <span class="ntime">${e.impact === 'Holiday' ? 'All day' : e.time}</span>
+    <span class="ncur">${U.esc(e.cur)}</span>
+    <span class="nmain"><b>${U.esc(e.title)}</b>${fp ? `<small>${U.esc(fp)}</small>` : ''}</span>
+  </div>`;
+}
+
+function newsDay(sel) {
+  if (!News.has()) return '';
+  const [from, to] = News.range();
+  const short = d => U.fmtDate(d, { weekday: 'short', day: 'numeric', month: 'short' });
+  const onDay = e => e.date === sel;
+  const all = News.events().filter(onDay);
+  const list = News.filtered({ high: ui.newsHigh, mine: ui.newsMine }).filter(onDay);
+  const hidden = all.length - list.length;
+  let body;
+  if (!from || sel < from || sel > to) {
+    body = `<p class="muted small">News only covers this week${from ? `: ${short(from)} – ${short(to)}` : ''}.</p>`;
+  } else {
+    const now = Date.now();
+    body = (list.length ? `<div class="newslist">${list.map(e => newsRow(e, now)).join('')}</div>` : '<p class="muted small">No news.</p>')
+      + (hidden ? `<p class="muted small newsmore">${hidden}${list.length ? ' more' : ''} hidden by the filters.</p>` : '');
+  }
+  return `<div class="card">
+    <h3 class="dayhead"><span>${U.esc(U.dayLabel(sel))}</span>${list.length ? `<span>${list.length} news</span>` : ''}</h3>
+    ${body}
+  </div>`;
+}
+
 function viewCalendar() {
   const [y, m] = ui.calMonth.split('-').map(Number);
   const first = `${ui.calMonth}-01`;
@@ -1547,6 +1645,9 @@ function viewCalendar() {
 
   const tasksMode = ui.calMode === 'tasks';
   const moneyMode = ui.calMode === 'money';
+  const newsMode = ui.calMode === 'news';
+  if (newsMode) loadNews();
+  const news = newsMode ? newsByDay() : {};
   const spend = moneyMode ? Money.byDay(first, last) : {};
   const daySpend = moneyMode ? Money.byDay(first, last, true) : {};
   const dueBy = {};
@@ -1559,9 +1660,13 @@ function viewCalendar() {
     const pct = b && b.tasks ? b.done / b.tasks * 100 : NaN;
     const sp = spend[ds] || 0;
     const limit = moneyMode ? Money.dailyBudget(ds) : 0;
-    const cls = moneyMode ? (sp > 0 ? (limit ? ((daySpend[ds] || 0) > limit ? 'neg' : 'pos') : 'spent') : '')
+    const nd = news[ds];
+    const cls = newsMode ? (nd ? (nd.High ? 'nw-high' : nd.Medium ? 'nw-medium' : '') : '')
+      : moneyMode ? (sp > 0 ? (limit ? ((daySpend[ds] || 0) > limit ? 'neg' : 'pos') : 'spent') : '')
       : tasksMode ? (b && b.tasks && (ds < today || pct >= 100) ? 'b-' + Perf.band(pct) : '') : b && b.n ? U.cls(b.pnl) : '';
-    const main = moneyMode ? (sp > 0 ? `<span class="dp">${Money.short(sp)}</span>` : '')
+    const main = newsMode
+      ? nd ? `<span class="ndots">${IMPACTS.filter(k => nd[k]).map(k => `<i class="im-${k.toLowerCase()}"></i>`).join('')}</span><span class="dt">${nd.n} news</span>` : ''
+      : moneyMode ? (sp > 0 ? `<span class="dp">${Money.short(sp)}</span>` : '')
       : tasksMode
       ? b && b.tasks ? `<span class="dp">${Math.round(pct)}%</span><span class="dt">${b.done}/${b.tasks}</span>` : ''
       : b && b.n ? `<span class="dp">${U.moneyShort(b.pnl)}</span><span class="dt">${b.n} trade${b.n > 1 ? 's' : ''}</span>` : '';
@@ -1575,7 +1680,9 @@ function viewCalendar() {
 
   const sel = ui.calDay && ui.calDay.startsWith(ui.calMonth) ? ui.calDay : null;
   let detail = '';
-  if (sel && moneyMode) {
+  if (sel && newsMode) {
+    detail = newsDay(sel);
+  } else if (sel && moneyMode) {
     const ex = Money.list(sel, sel);
     const t = Money.total(ex);
     detail = `<div class="card">
@@ -1604,9 +1711,9 @@ function viewCalendar() {
       <span class="datepick"><span>${U.fmtDate(first, { month: 'long', year: 'numeric' })}</span></span>
       <button type="button" class="icon nav" data-act="calShift" data-v="1" aria-label="Next month">›</button>
     </div>
-    ${chips('calMode', ui.calMode, [['pnl', '💵 PnL'], ['tasks', '☑ Activities'], ['money', '💰 Money']])}
-    ${tasksMode || moneyMode ? '' : acctChips()}
-    ${moneyMode ? moneyMonthStats(first, last, spend) : tasksMode ? `<div class="card statrow">
+    ${chips('calMode', ui.calMode, [['pnl', '💵 PnL'], ['tasks', '☑ Activities'], ['money', '💰 Money'], ['news', '📰 News']])}
+    ${tasksMode || moneyMode || newsMode ? '' : acctChips()}
+    ${newsMode ? newsStats() : moneyMode ? moneyMonthStats(first, last, spend) : tasksMode ? `<div class="card statrow">
       <div><span>Avg completion</span><b>${isFinite(ms.avg) ? Math.round(ms.avg) + '%' : '–'}</b></div>
       <div><span>Perfect days</span><b class="pos">${ms.perfect}</b></div>
       <div><span>Days 70%+</span><b>${ms.good}/${ms.tracked}</b></div>
@@ -2318,6 +2425,10 @@ Past days and today stay as they are.`)) return;
     toast('Account deleted');
   },
   calMode(el) { ui.calMode = el.dataset.v; render(); },
+  newsHigh() { ui.newsHigh = !ui.newsHigh; lsSet('dt.newsHigh', ui.newsHigh ? '1' : '0'); render(); },
+  newsMine() { ui.newsMine = !ui.newsMine; lsSet('dt.newsMine', ui.newsMine ? '1' : '0'); render(); },
+  newsRetry() { loadNews(true); render(); },
+  newsGo(el) { ui.calMonth = el.dataset.v.slice(0, 7); ui.calDay = el.dataset.v; render(); },
   statsSection(el) { ui.statsSection = el.dataset.v; lsSet('dt.statsSec', ui.statsSection); render(); },
   goActivities() { ui.tab = 'stats'; ui.statsSection = 'activities'; ui.statsRange = 'week'; lsSet('dt.tab', 'stats'); render(); window.scrollTo(0, 0); },
   barTip(el) { toast(el.dataset.tip); },
