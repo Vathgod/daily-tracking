@@ -1690,12 +1690,12 @@ function viewCalendar() {
       ${ex.length ? `<div class="explist">${ex.map(expRow).join('')}</div>` : '<p class="muted small">No spending.</p>'}
       <button type="button" class="btn ghost block addday" data-act="addExp" data-v="${sel}">+ Add expense for this day</button>
     </div>`;
-  } else if (sel) {
-    const st = tradesIn(sel, sel);
-    const p = sumPnl(st);
+  } else if (sel && tasksMode) {
+    const tk = tasksOn(sel);
+    const done = tk.filter(t => t.done).length;
     detail = `<div class="card">
-      <h3 class="dayhead"><span>${U.esc(U.dayLabel(sel))}</span>${st.length ? `<span class="${U.cls(p)}">${U.money(p)}</span>` : ''}</h3>
-      ${st.length ? `<div class="tradelist">${st.map(tradeCard).join('')}</div>` : '<p class="muted small">No trades.</p>'}
+      <h3 class="dayhead"><span>${U.esc(U.dayLabel(sel))}</span>${tk.length ? `<span class="${done === tk.length ? 'pos' : ''}">${done}/${tk.length} done</span>` : ''}</h3>
+      ${tk.length ? taskList(tk, today, { tag: true }) : '<p class="muted small">No activities.</p>'}
     </div>`;
     if (dueBy[sel]) {
       detail = `<div class="card duecard">
@@ -1703,6 +1703,13 @@ function viewCalendar() {
         ${noteList(dueBy[sel], today)}
       </div>` + detail;
     }
+  } else if (sel) {
+    const st = tradesIn(sel, sel);
+    const p = sumPnl(st);
+    detail = `<div class="card">
+      <h3 class="dayhead"><span>${U.esc(U.dayLabel(sel))}</span>${st.length ? `<span class="${U.cls(p)}">${U.money(p)}</span>` : ''}</h3>
+      ${st.length ? `<div class="tradelist">${st.map(tradeCard).join('')}</div>` : '<p class="muted small">No trades.</p>'}
+    </div>`;
   }
 
   return `<section class="view">
