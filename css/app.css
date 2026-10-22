@@ -68,7 +68,7 @@ body {
   -webkit-tap-highlight-color: transparent;
   padding-bottom: calc(76px + env(safe-area-inset-bottom));
 }
-button, input, select { font: inherit; color: inherit; }
+button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
 a { color: var(--accent); }
 .pos { color: var(--pos); }
@@ -167,7 +167,7 @@ main { max-width: 640px; margin: 0 auto; padding: 14px 16px 24px; }
 
 /* ---------- Tasks ---------- */
 .addrow { display: flex; gap: 8px; }
-.addrow input {
+.addrow input, .addrow textarea {
   flex: 1; min-width: 0; border: 1px solid var(--border); background: var(--surface);
   border-radius: 12px; padding: 11px 12px;
 }
@@ -190,7 +190,7 @@ main { max-width: 640px; margin: 0 auto; padding: 14px 16px 24px; }
   transform: rotate(45deg) translate(-1px, -1px);
 }
 .check input:focus-visible + .box { outline: 2px solid var(--accent); outline-offset: 2px; }
-.text { min-width: 0; overflow-wrap: anywhere; }
+.text { min-width: 0; overflow-wrap: anywhere; white-space: pre-line; }
 .text small { display: block; color: var(--muted); font-size: 12px; }
 .task.done .text { text-decoration: line-through; color: var(--muted); }
 .task .del { font-size: 20px; min-width: 32px; min-height: 32px; color: var(--muted); opacity: .5; }
@@ -198,7 +198,7 @@ main { max-width: 640px; margin: 0 auto; padding: 14px 16px 24px; }
 .task .del:hover, .task .del:focus-visible, .task .edit:hover, .task .edit:focus-visible { opacity: 1; filter: none; }
 .task.editing { padding: 6px; }
 .editrow { flex: 1; display: flex; gap: 6px; align-items: center; min-width: 0; }
-.editrow input {
+.editrow input, .editrow textarea {
   flex: 1; min-width: 0; border: 1px solid var(--accent); background: var(--surface-2);
   border-radius: 10px; padding: 8px 10px; outline: none;
 }
@@ -250,12 +250,14 @@ body[data-tab="plan"] .toast { bottom: calc(var(--tabbar-h, 64px) + 72px); }
   border: 1px solid var(--border); background: var(--surface); border-radius: 12px; padding-right: 5px;
 }
 .addfield:focus-within { outline: 2px solid var(--accent); outline-offset: -1px; }
-.addrow .addfield input, .addrow .addfield input:focus { flex: 1; border: 0; background: none; outline: none; }
+.addrow .addfield input, .addrow .addfield input:focus,
+.addrow .addfield textarea, .addrow .addfield textarea:focus { flex: 1; border: 0; background: none; outline: none; }
+.growbox { display: block; resize: none; max-height: 40vh; overflow-y: auto; }
 .addclear {
   flex: none; display: grid; place-items: center; width: 26px; height: 26px; margin-right: 2px; padding: 0;
   border: 0; border-radius: 50%; background: var(--surface-2); color: var(--muted); font-size: 17px; line-height: 1;
 }
-.addfield input:placeholder-shown + .addclear { display: none; }
+.addfield input:placeholder-shown + .addclear, .addfield textarea:placeholder-shown + .addclear { display: none; }
 .addbtn { flex: none; width: 46px; padding: 0; font-size: 24px; line-height: 1; }
 .dailytog { flex: none; display: flex; }
 .dailytog input { position: absolute; opacity: 0; width: 1px; height: 1px; }
@@ -363,7 +365,7 @@ body[data-tab="plan"] .toast { bottom: calc(var(--tabbar-h, 64px) + 72px); }
 .side.buy { background: var(--pos-bg); color: var(--pos); }
 .side.sell { background: var(--neg-bg); color: var(--neg); }
 .trade .pnl { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
-.note { font-size: 13px; color: var(--muted); font-style: italic; }
+.note { font-size: 13px; color: var(--muted); font-style: italic; white-space: pre-line; }
 
 /* ---------- Dialogs / sheets ---------- */
 dialog {
@@ -382,12 +384,13 @@ dialog::backdrop { background: rgba(0, 0, 0, .55); }
 
 .field { display: grid; gap: 4px; }
 .field > span:first-child { font-size: 12px; color: var(--muted); font-weight: 600; }
-.field input, .field select {
+.field input, .field select, .field textarea {
   width: 100%; min-width: 0; border: 1px solid var(--border); background: var(--surface-2);
   border-radius: 10px; padding: 10px; font-variant-numeric: tabular-nums;
 }
 .field input[type="date"], .field input[type="time"] { min-height: 42px; padding: 8px 6px; }
-.field input:focus, .addrow input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.field textarea { resize: vertical; min-height: 96px; font-variant-numeric: normal; }
+.field input:focus, .field textarea:focus, .addrow input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 
 .seg { display: grid; gap: 6px; background: var(--surface-2); padding: 4px; border-radius: 12px; }
 .seg.three { grid-template-columns: repeat(3, 1fr); }

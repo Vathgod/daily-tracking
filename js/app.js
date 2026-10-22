@@ -110,7 +110,7 @@ function toast(msg) {
 function taskRow(t, today, { showDate = false, tag = false } = {}) {
   if (ui.editing === t.id) {
     return `<li class="task editing"><form class="editrow" data-id="${t.id}" autocomplete="off">
-      <input id="editInput" value="${U.esc(t.text)}" maxlength="200" enterkeyhint="done" aria-label="Activity">
+      <textarea id="editInput" class="growbox" rows="1" maxlength="1000" enterkeyhint="done" aria-label="Activity">${U.esc(t.text)}</textarea>
       <button type="submit" class="mini save">Save</button>
       <button type="button" class="mini" data-act="cancelEdit">Cancel</button>
     </form></li>`;
@@ -300,7 +300,7 @@ function viewPlan() {
 
     <form id="taskForm" class="addrow dock" autocomplete="off">
       <div class="addfield">
-        <input id="taskInput" placeholder="${ui.dailyOn ? 'Add a daily activity…' : 'Add an activity…'}" maxlength="200" enterkeyhint="done">
+        <textarea id="taskInput" class="growbox" rows="1" placeholder="${ui.dailyOn ? 'Add a daily activity…' : 'Add an activity…'}" maxlength="1000" enterkeyhint="done"></textarea>
         <button type="button" class="addclear" data-act="clearTask" aria-label="Clear">×</button>
         <label class="dailytog" title="Repeat Mon–Fri"><input type="checkbox" id="taskDaily" aria-label="Repeat Mon–Fri"${ui.dailyOn ? ' checked' : ''}><span>🔁</span></label>
       </div>
@@ -2315,6 +2315,13 @@ function render() {
     ei.focus();
     ei.setSelectionRange(ei.value.length, ei.value.length);
   }
+  for (const b of $$('.growbox')) fitBox(b);
+}
+
+// Activity boxes grow with what's typed, up to a cap, then scroll.
+function fitBox(el) {
+  el.style.height = 'auto';
+  el.style.height = el.scrollHeight + el.offsetHeight - el.clientHeight + 'px';
 }
 
 // ---------- Theme ----------
@@ -2355,7 +2362,7 @@ It will still come back on other days. To stop it for good, tap ⚙ Manage in th
     const n = Store.get('notes', el.dataset.id);
     if (n && confirm(`Delete note "${n.text}"?`)) Store.remove('notes', n.id);
   },
-  clearTask() { const i = $('#taskInput'); i.value = ''; i.focus(); },
+  clearTask() { const i = $('#taskInput'); i.value = ''; fitBox(i); i.focus(); },
   toggleDone() { ui.doneOpen = !ui.doneOpen; render(); },
   toggleMissed() { ui.missedOpen = !ui.missedOpen; render(); },
   toggleManage() { ui.manageOpen = !ui.manageOpen; render(); },
@@ -2612,6 +2619,7 @@ document.addEventListener('change', async e => {
 });
 
 document.addEventListener('input', e => {
+  if (e.target.classList.contains('growbox')) fitBox(e.target);
   if (e.target.name === 'pnl') form.pnlTouched = e.target.value.trim() !== '';
   if (e.target.dataset.shot) {
     const x = form.shots[e.target.dataset.shot];
@@ -2683,6 +2691,11 @@ document.addEventListener('submit', e => {
 // Enter in the "new category" boxes adds it; in a rename box it saves the field.
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && e.target.id === 'editInput') { ui.editing = null; render(); }
+  // In an activity box, Enter adds/saves and Shift+Enter starts a new line.
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.target.classList.contains('growbox')) {
+    e.preventDefault();
+    e.target.form.requestSubmit();
+  }
 });
 
 $('#catForm').addEventListener('keydown', e => {
