@@ -193,6 +193,13 @@ main { max-width: 640px; margin: 0 auto; padding: 14px 16px 24px; }
 .text { min-width: 0; overflow-wrap: anywhere; white-space: pre-line; }
 .text small { display: block; color: var(--muted); font-size: 12px; }
 .task.done .text { text-decoration: line-through; color: var(--muted); }
+.ttime {
+  flex: none; align-self: flex-start; margin: 1px -4px 0 0; padding: 2px 7px; border-radius: 6px;
+  background: var(--surface-2); color: var(--muted); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.ttime.late { background: var(--amber-bg); color: var(--amber); }
+.task.late { border-color: color-mix(in srgb, var(--amber) 45%, transparent); }
+.task.late .box { border-color: var(--amber); }
 .task .del { font-size: 20px; min-width: 32px; min-height: 32px; color: var(--muted); opacity: .5; }
 .task .edit { font-size: 14px; min-width: 32px; min-height: 32px; opacity: .45; filter: grayscale(1); }
 .task .del:hover, .task .del:focus-visible, .task .edit:hover, .task .edit:focus-visible { opacity: 1; filter: none; }
@@ -326,8 +333,8 @@ body[data-tab="plan"] .toast { bottom: calc(var(--tabbar-h, 64px) + 72px); }
   flex: none; border: 0; border-radius: 999px; padding: 4px 8px; margin-right: 2px;
   background: var(--amber-bg); color: var(--amber); font-size: 12px; font-weight: 700; white-space: nowrap;
 }
-.noteedit { flex-wrap: wrap; }
-.noteedit #editInput { flex-basis: 100%; }
+.noteedit, .wrapedit { flex-wrap: wrap; }
+.noteedit #editInput, .wrapedit #editInput { flex-basis: 100%; }
 .duefield { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
 .duefield input { border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 8px; padding: 6px 8px; }
 .editbtns { display: flex; gap: 6px; margin-left: auto; }

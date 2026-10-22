@@ -33,6 +33,8 @@ const ui = {
   planMode: lsGet('dt.planMode', 'plan'), // 'plan' or 'notes'
   noteDue: '', // deadline picked for the note being typed
   editDue: null, // deadline in the note edit box (null = not changed yet)
+  taskTime: '', // time picked for the activity being typed
+  editTime: null, // time in the activity edit box (null = not changed yet)
   notePick: null, // id of the note whose "add to plan" day picker is open
 };
 
@@ -53,9 +55,16 @@ function tradesIn(from, to, pair = 'all', acct = ui.acct) {
     .sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
 }
 
+// Timed activities first, earliest at the top; the rest in the order they were added.
 function tasksOn(date) {
-  return Store.list('tasks').filter(t => t.date === date).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  return Store.list('tasks').filter(t => t.date === date)
+    .sort((a, b) => (a.time || '99:99').localeCompare(b.time || '99:99') || (a.createdAt || 0) - (b.createdAt || 0));
 }
+
+function nowHM() { return new Date().toTimeString().slice(0, 5); }
+
+// Late: today, its time has passed and it isn't ticked yet.
+function isLate(t, today = U.today()) { return !t.done && !!t.time && t.date === today && t.time <= nowHM(); }
 
 // Daily activities: each one puts a task on today (and on the plan day being
 // looked at, if it's later). The task id is fixed per routine and day, so two
@@ -79,7 +88,7 @@ function fillRoutines() {
     for (const d of dates) {
       const id = routineTaskId(r.id, d);
       if (!routineOn(r, d) || Store.get('tasks', id)) continue;
-      add.push({ id, text: r.text, date: d, done: false, routine: r.id, createdAt: r.createdAt, updatedAt: 1 });
+      add.push({ id, text: r.text, time: r.time || '', date: d, done: false, routine: r.id, createdAt: r.createdAt, updatedAt: 1 });
     }
   }
   if (add.length) Store.addQuiet('tasks', add);
@@ -109,13 +118,18 @@ function toast(msg) {
 
 function taskRow(t, today, { showDate = false, tag = false } = {}) {
   if (ui.editing === t.id) {
-    return `<li class="task editing"><form class="editrow" data-id="${t.id}" autocomplete="off">
+    const time = ui.editTime ?? t.time ?? '';
+    return `<li class="task editing"><form class="editrow wrapedit" data-id="${t.id}" autocomplete="off">
       <textarea id="editInput" class="growbox" rows="1" maxlength="1000" enterkeyhint="done" aria-label="Activity">${U.esc(t.text)}</textarea>
-      <button type="submit" class="mini save">Save</button>
-      <button type="button" class="mini" data-act="cancelEdit">Cancel</button>
+      <label class="duefield"><span>🕐 Time</span><input type="time" id="editTime" value="${time}" aria-label="Time"></label>
+      ${time ? '<button type="button" class="mini" data-act="clearEditTime">No time</button>' : ''}
+      <span class="editbtns"><button type="submit" class="mini save">Save</button>
+      <button type="button" class="mini" data-act="cancelEdit">Cancel</button></span>
     </form></li>`;
   }
   const missed = isMissed(t, today);
+  const late = isLate(t, today);
+  const time = t.time ? `<span class="ttime${late ? ' late' : ''}">${t.time}${late ? ' · Late' : ''}</span>` : '';
   let tail = '';
   if (missed && t.movedTo) {
     tail = `<span class="badge muted">Moved → ${U.esc(U.fmtDate(t.movedTo, { day: 'numeric', month: 'short' }))}</span>`;
@@ -124,9 +138,9 @@ function taskRow(t, today, { showDate = false, tag = false } = {}) {
   } else if (missed) {
     tail = `<span class="badge red">Missed</span><button type="button" class="mini" data-act="moveToday" data-id="${t.id}">→ Today</button>`;
   }
-  return `<li class="task${t.done ? ' done' : ''}${missed ? ' missed' : ''}">
+  return `<li class="task${t.done ? ' done' : ''}${missed ? ' missed' : ''}${late ? ' late' : ''}">
     <label class="check"><input type="checkbox" data-act="toggleTask" data-id="${t.id}"${t.done ? ' checked' : ''}><span class="box" aria-hidden="true"></span>
-      <span class="text">${U.esc(t.text)}${tag && t.routine ? ' <span class="badge daily">🔁</span>' : ''}${showDate ? `<small>${U.esc(U.fmtDate(t.date, { weekday: 'short', day: 'numeric', month: 'short' }))}</small>` : ''}</span></label>
+      ${time}<span class="text">${U.esc(t.text)}${tag && t.routine ? ' <span class="badge daily">🔁</span>' : ''}${showDate ? `<small>${U.esc(U.fmtDate(t.date, { weekday: 'short', day: 'numeric', month: 'short' }))}</small>` : ''}</span></label>
     ${tail}
     <button type="button" class="icon edit" data-act="editTask" data-id="${t.id}" aria-label="Edit">✏️</button>
     <button type="button" class="icon del" data-act="delTask" data-id="${t.id}" aria-label="Delete">×</button>
@@ -302,6 +316,8 @@ function viewPlan() {
       <div class="addfield">
         <textarea id="taskInput" class="growbox" rows="1" placeholder="${ui.dailyOn ? 'Add a daily activity…' : 'Add an activity…'}" maxlength="1000" enterkeyhint="done"></textarea>
         <button type="button" class="addclear" data-act="clearTask" aria-label="Clear">×</button>
+        ${ui.taskTime ? `<button type="button" class="duechip" data-act="clearTaskTime" aria-label="Remove time">${ui.taskTime} ×</button>` : ''}
+        <label class="duetog${ui.taskTime ? ' set' : ''}" title="Time"><input type="time" id="taskTime" value="${ui.taskTime}" aria-label="Time"><span>🕐</span></label>
         <label class="dailytog" title="Repeat Mon–Fri"><input type="checkbox" id="taskDaily" aria-label="Repeat Mon–Fri"${ui.dailyOn ? ' checked' : ''}><span>🔁</span></label>
       </div>
       <button class="btn primary addbtn" type="submit" aria-label="Add">+</button>
@@ -309,22 +325,27 @@ function viewPlan() {
   </section>`;
 }
 
-// Renaming a daily activity renames it from today on; past days keep the old name.
-function saveEdit(id, text) {
+// Changing a daily activity changes it from today on; past days keep the old name and time.
+function changeRoutine(r, fields) {
+  const today = U.today();
+  Store.upsert('routines', { ...r, ...fields });
+  for (const x of Store.list('tasks')) {
+    if (x.routine === r.id && x.date >= today) Store.upsert('tasks', { ...x, ...fields });
+  }
+}
+
+function saveEdit(id, text, time) {
   const t = Store.get('tasks', id);
   if (!text) return toast('Type a name, or tap Cancel.');
   ui.editing = null;
-  if (!t || t.deleted || text === t.text) return render();
-  const today = U.today();
+  ui.editTime = null;
+  if (!t || t.deleted || (text === t.text && time === (t.time || ''))) return render();
   const r = t.routine && Store.get('routines', t.routine);
-  if (r && !r.deleted && t.date >= today) {
-    Store.upsert('routines', { ...r, text });
-    for (const x of Store.list('tasks')) {
-      if (x.routine === r.id && x.date >= today) Store.upsert('tasks', { ...x, text });
-    }
-    toast('Renamed for today and every day after');
+  if (r && !r.deleted && t.date >= U.today()) {
+    changeRoutine(r, { text, time });
+    toast('Changed for today and every day after');
   } else {
-    Store.upsert('tasks', { ...t, text });
+    Store.upsert('tasks', { ...t, text, time });
   }
 }
 
@@ -372,7 +393,8 @@ function manageDaily() {
   return `<div class="managebox">
     <p class="muted small">These are added to your plan every day, or Mon–Fri only. Tap the days to switch. Stop one to end it. Past days stay as they are.</p>
     ${rs.length ? `<ul class="dailylist">${rs.map(r => `<li><span class="text">${U.esc(r.text)}</span>
-      <span class="dailyacts"><button type="button" class="mini" data-act="dailyDays" data-id="${r.id}">${r.days === 'weekdays' ? 'Mon–Fri' : 'Every day'}</button>
+      <span class="dailyacts"><label class="mini pickdate">🕐 ${r.time || 'Time'}<input type="time" data-act="dailyTime" data-id="${r.id}" value="${r.time || ''}" aria-label="Time"></label>
+      <button type="button" class="mini" data-act="dailyDays" data-id="${r.id}">${r.days === 'weekdays' ? 'Mon–Fri' : 'Every day'}</button>
       <button type="button" class="mini" data-act="stopDaily" data-id="${r.id}">Stop</button></span></li>`).join('')}</ul>`
       : '<p class="muted small">No daily activities. Turn on 🔁 Daily when adding one.</p>'}
   </div>`;
@@ -2349,8 +2371,10 @@ It will still come back on other days. To stop it for good, tap ⚙ Manage in th
       : `Delete "${t.text}"?`;
     if (confirm(msg)) Store.remove('tasks', t.id);
   },
-  editTask(el) { ui.editing = el.dataset.id; render(); },
-  cancelEdit() { ui.editing = null; ui.editDue = null; render(); },
+  editTask(el) { ui.editing = el.dataset.id; ui.editTime = null; render(); },
+  clearTaskTime() { ui.taskTime = ''; render(); $('#taskInput').focus(); },
+  clearEditTime() { ui.editTime = ''; render(); },
+  cancelEdit() { ui.editing = null; ui.editDue = null; ui.editTime = null; render(); },
   planMode(el) { ui.planMode = el.dataset.v; ui.notePick = null; ui.editing = null; lsSet('dt.planMode', ui.planMode); render(); },
   clearNote() { const i = $('#noteInput'); i.value = ''; i.focus(); },
   clearNoteDue() { ui.noteDue = ''; render(); $('#noteInput').focus(); },
@@ -2396,7 +2420,7 @@ Past days and today stay as they are.`)) return;
         const id = routineTaskId(r.id, d);
         const t = Store.get('tasks', id);
         if (d >= today && d >= r.start && isWeekend(d) && t && t.deleted) {
-          Store.upsert('tasks', { id, text: r.text, date: d, done: false, routine: r.id, createdAt: r.createdAt });
+          Store.upsert('tasks', { id, text: r.text, time: r.time || '', date: d, done: false, routine: r.id, createdAt: r.createdAt });
         }
       }
     }
@@ -2572,6 +2596,16 @@ document.addEventListener('change', async e => {
     ui.noteDue = el.value; render(); $('#noteInput').focus();
   } else if (el.id === 'editDue') {
     ui.editDue = el.value; render();
+  } else if (el.id === 'taskTime') {
+    ui.taskTime = el.value; render(); $('#taskInput').focus();
+  } else if (el.id === 'editTime') {
+    ui.editTime = el.value; render();
+  } else if (el.dataset.act === 'dailyTime') {
+    const r = Store.get('routines', el.dataset.id);
+    if (r && !r.deleted) {
+      changeRoutine(r, { time: el.value });
+      toast(el.value ? `Set to ${el.value} from today on` : 'Time removed from today on');
+    }
   } else if (el.dataset.act === 'notePlanDate' && el.value) {
     planNote(el.dataset.id, el.value);
   } else if (el.id === 'planDate' && el.value) {
@@ -2640,19 +2674,21 @@ document.addEventListener('submit', e => {
     if (!text) return;
     // Clear the box and 🔁 first: saving redraws the page and would put them back.
     const daily = $('#taskDaily').checked;
+    const time = ui.taskTime;
     input.value = '';
     ui.dailyOn = false;
+    ui.taskTime = '';
     if (daily) {
       // New daily activities run Mon–Fri; added on a weekend, they start Monday.
       let start = ui.planDate;
       while (isWeekend(start)) start = U.addDays(start, 1);
-      const r = Store.upsert('routines', { id: U.uid(), text, start, days: 'weekdays', createdAt: Date.now() });
+      const r = Store.upsert('routines', { id: U.uid(), text, time, start, days: 'weekdays', createdAt: Date.now() });
       if (start === ui.planDate) {
-        Store.upsert('tasks', { id: routineTaskId(r.id, start), text, date: start, done: false, routine: r.id, createdAt: r.createdAt });
+        Store.upsert('tasks', { id: routineTaskId(r.id, start), text, time, date: start, done: false, routine: r.id, createdAt: r.createdAt });
       }
       toast(start === ui.planDate ? 'Added. It will show up Mon–Fri.' : 'Added. It starts Monday and shows up Mon–Fri.');
     } else {
-      Store.upsert('tasks', { id: U.uid(), text, date: ui.planDate, done: false, createdAt: Date.now() });
+      Store.upsert('tasks', { id: U.uid(), text, time, date: ui.planDate, done: false, createdAt: Date.now() });
     }
     $('#taskInput').focus();
   } else if (e.target.id === 'noteForm') {
@@ -2670,7 +2706,7 @@ document.addEventListener('submit', e => {
     saveNote(e.target.dataset.id, $('#editInput').value.trim(), $('#editDue').value);
   } else if (e.target.classList.contains('editrow')) {
     e.preventDefault();
-    saveEdit(e.target.dataset.id, $('#editInput').value.trim());
+    saveEdit(e.target.dataset.id, $('#editInput').value.trim(), $('#editTime').value);
   } else if (e.target.id === 'tradeForm') {
     e.preventDefault();
     saveTrade();
@@ -2755,6 +2791,15 @@ Store.on(() => {
   if ($('#settingsDlg').open) renderSyncInfo();
   if ($('#weekDlg').open) renderWeek(ui.weekOpen);
 });
+
+// Redraw when an activity's time passes, so it shows Late without a reload.
+let lateSeen = '';
+setInterval(() => {
+  const k = tasksOn(U.today()).filter(t => isLate(t)).map(t => t.id).join();
+  if (k === lateSeen) return;
+  lateSeen = k;
+  if (ui.tab === 'plan' || ui.tab === 'calendar') render();
+}, 30000);
 
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
