@@ -177,7 +177,7 @@ function noteRow(n, today) {
   if (ui.editing === n.id) {
     const due = ui.editDue ?? n.due ?? '';
     return `<li class="task editing"><form class="editrow noteedit" data-id="${n.id}" data-kind="note" autocomplete="off">
-      <input id="editInput" value="${U.esc(n.text)}" maxlength="200" enterkeyhint="done" aria-label="Note">
+      <textarea id="editInput" class="growbox" rows="1" maxlength="1000" enterkeyhint="done" aria-label="Note">${U.esc(n.text)}</textarea>
       <label class="duefield"><span>📅 Deadline</span><input type="date" id="editDue" value="${due}" aria-label="Deadline"></label>
       ${due ? '<button type="button" class="mini" data-act="clearEditDue">No deadline</button>' : ''}
       <span class="editbtns"><button type="submit" class="mini save">Save</button>
@@ -230,7 +230,7 @@ function viewNotes() {
 
     <form id="noteForm" class="addrow dock" autocomplete="off">
       <div class="addfield">
-        <input id="noteInput" placeholder="${ui.noteDue ? `Note due ${U.esc(dueLabel)}…` : 'Write a note…'}" maxlength="200" enterkeyhint="done">
+        <textarea id="noteInput" class="growbox" rows="1" placeholder="${ui.noteDue ? `Note due ${U.esc(dueLabel)}…` : 'Write a note…'}" maxlength="1000" enterkeyhint="done"></textarea>
         <button type="button" class="addclear" data-act="clearNote" aria-label="Clear">×</button>
         ${ui.noteDue ? `<button type="button" class="duechip" data-act="clearNoteDue" aria-label="Remove deadline">${U.esc(dueLabel)} ×</button>` : ''}
         <label class="duetog${ui.noteDue ? ' set' : ''}" title="Deadline"><input type="date" id="noteDue" value="${ui.noteDue}" aria-label="Deadline"><span>📅</span></label>
@@ -2376,7 +2376,7 @@ It will still come back on other days. To stop it for good, tap ⚙ Manage in th
   clearEditTime() { ui.editTime = ''; render(); },
   cancelEdit() { ui.editing = null; ui.editDue = null; ui.editTime = null; render(); },
   planMode(el) { ui.planMode = el.dataset.v; ui.notePick = null; ui.editing = null; lsSet('dt.planMode', ui.planMode); render(); },
-  clearNote() { const i = $('#noteInput'); i.value = ''; i.focus(); },
+  clearNote() { const i = $('#noteInput'); i.value = ''; fitBox(i); i.focus(); },
   clearNoteDue() { ui.noteDue = ''; render(); $('#noteInput').focus(); },
   notePick(el) { ui.notePick = ui.notePick === el.dataset.id ? null : el.dataset.id; render(); },
   notePlan(el) { planNote(el.dataset.id, el.dataset.v); },
