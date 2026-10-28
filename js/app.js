@@ -28,6 +28,7 @@ const ui = {
   budgetOpen: null,
   recapOpen: null, // date of the day recap open in its sheet
   recapDraft: null, // { date, text, rating, tags } while a recap is written or edited
+  recapDay: null, // day shown on the Trades tab's recap card (null = today)
   budgetsAll: false,
   walletWs: null, // Sunday of the week shown on the wallet card (null = this week)
   acct: lsGet('dt.acct', 'all'),
@@ -859,13 +860,32 @@ function recapTitle(date) {
   return `📝 ${date === U.today() ? "Today's recap" : 'Day recap'}`;
 }
 
-function recapEditor(date) {
+// The Trades tab card's day: today, unless ‹ stepped back to an earlier one.
+function recapDay() {
+  return ui.recapDay && ui.recapDay < U.today() ? ui.recapDay : U.today();
+}
+
+// With `nav` (the Trades tab card), ‹ › step through the days, never past
+// today, and the stars go on their own line.
+function recapHead(date, stars, nav) {
+  if (!nav) return `<div class="row recaphead"><h4 class="sub">${recapTitle(date)}</h4>${stars}</div>`;
+  const st = tradesIn(date, date, 'all', 'all');
+  const p = sumPnl(st);
+  return `<div class="row w-head recapnav">
+      <button type="button" class="icon nav" data-act="recapShift" data-v="-1" aria-label="Previous day">‹</button>
+      <span class="w-title"><b>📝 ${U.esc(U.dayLabel(date))}</b><span class="muted small">${st.length
+        ? `${st.length} trade${st.length === 1 ? '' : 's'} · <span class="${U.cls(p)}">${U.money(p)}</span>` : 'No trades'}</span></span>
+      <button type="button" class="icon nav" data-act="recapShift" data-v="1" aria-label="Next day"${date >= U.today() ? ' disabled' : ''}>›</button>
+    </div>${stars ? `<div class="recapstars">${stars}</div>` : ''}`;
+}
+
+function recapEditor(date, nav) {
   const d = ui.recapDraft && ui.recapDraft.date === date ? ui.recapDraft : { text: '', rating: 0, tags: [] };
   const saved = !!recapOf(date);
   const list = Tags.active('day');
   for (const id of d.tags) if (!list.some(t => t.id === id) && Tags.get(id)) list.push(Tags.get(id));
   return `<div class="recapedit">
-    <div class="row recaphead"><h4 class="sub">${recapTitle(date)}</h4>${recapStars(date, d.rating)}</div>
+    ${recapHead(date, recapStars(date, d.rating), nav)}
     <textarea class="recaptext" data-date="${date}" rows="2" maxlength="2000" aria-label="Day recap"
       placeholder="How did the day go? e.g. no displacement, didn't check the news…">${U.esc(d.text)}</textarea>
     <div class="daytags">${list.map(t => `<button type="button" class="dtag${d.tags.includes(t.id) ? ' on' : ''}" data-act="recapTag" data-date="${date}" data-id="${U.esc(t.id)}" aria-pressed="${d.tags.includes(t.id)}">${U.esc(t.name)}</button>`).join('')}<button type="button" class="catedit" data-act="manageTags">✏️ Edit</button></div>
@@ -877,19 +897,19 @@ function recapEditor(date) {
 }
 
 // A saved recap, read only, with an Edit button.
-function recapView(date) {
+function recapView(date, nav) {
   const r = recapOf(date);
   const tags = (r.tags || []).map(Tags.name).filter(Boolean);
   return `<div class="recapedit">
-    <div class="row recaphead"><h4 class="sub">${recapTitle(date)}</h4>${r.rating ? recapStars(date, r.rating, true) : ''}</div>
+    ${recapHead(date, r.rating ? recapStars(date, r.rating, true) : '', nav)}
     ${r.text ? `<p class="recapsaved">${U.esc(r.text)}</p>` : ''}
     ${tags.length ? `<div class="rl-top">${tags.map(n => `<span class="rl-tag">${U.esc(n)}</span>`).join('')}</div>` : ''}
     <button type="button" class="btn ghost block" data-act="recapEdit" data-date="${date}">✏️ Edit</button>
   </div>`;
 }
 
-function recapBox(date) {
-  return recapEditing(date) ? recapEditor(date) : recapView(date);
+function recapBox(date, nav) {
+  return recapEditing(date) ? recapEditor(date, nav) : recapView(date, nav);
 }
 
 // A day's recap in a list: stars, tags and the start of the text; tap to edit.
@@ -978,7 +998,7 @@ function viewTrades() {
       ${lossLimitBlock(allToday)}
     </div>
     <button type="button" class="btn primary block" data-act="addTrade">+ Add trade</button>
-    <div class="card recapcard">${recapBox(today)}</div>
+    <div class="card recapcard">${recapBox(recapDay(), true)}</div>
 
     ${chips('tradeRange', ui.tradeRange, [['today', 'Today'], ['week', 'Week'], ['month', 'Month'], ['all', 'All']])}
     ${chips('tradePair', ui.tradePair, [['all', 'All pairs'], ...Pairs.all().filter(p => !p.hidden || p.name === ui.tradePair).map(p => [U.esc(p.name), U.esc(p.name)])])}
@@ -2939,6 +2959,11 @@ Past days and today stay as they are.`)) return;
     if (box) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
   },
   recapSave(el) { saveRecap(el.dataset.date); },
+  recapShift(el) {
+    const d = U.addDays(recapDay(), +el.dataset.v);
+    ui.recapDay = d < U.today() ? d : null;
+    render();
+  },
   recapCancel() { ui.recapDraft = null; redrawRecap(); },
   addTag(el) { addTag(el.dataset.v); },
   hideTag(el) { setTagHidden(el.dataset.id, true); },

@@ -204,6 +204,7 @@
   font: inherit; font-size: 15px; color: var(--text); background: var(--surface-2);
   border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px;
 }
+.recapstars { display: flex; justify-content: center; }
 .recapsaved { margin: 0; font-size: 15px; white-space: pre-line; overflow-wrap: anywhere; }
 .recapedit .actions { margin-top: 2px; }
 .recaptext:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
