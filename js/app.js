@@ -641,8 +641,7 @@ function renderTags() {
   const empty = '<li class="muted small">None yet. Add one below.</li>';
   $('#setupList').innerHTML = Tags.active('setup').map(tagRow).join('') || empty;
   $('#mistakeList').innerHTML = Tags.active('mistake').map(tagRow).join('') || empty;
-  $('#dayTagList').innerHTML = Tags.active('day').map(tagRow).join('') || empty;
-  const hidden = Tags.all().filter(t => t.hidden);
+  const hidden = Tags.all().filter(t => t.hidden && t.kind !== 'day');
   $('#hiddenTags').innerHTML = hidden.length
     ? `<h3 class="sub">Hidden</h3><ul class="catlist">${hidden.map(tagRow).join('')}</ul>` : '';
 }
@@ -651,7 +650,6 @@ function openTags() {
   const f = $('#tagForm');
   f.newSetup.value = '';
   f.newMistake.value = '';
-  f.newDay.value = '';
   renderTags();
   $('#tagDlg').showModal();
 }
@@ -676,9 +674,9 @@ function renameTag(el) {
 }
 
 function addTag(kind) {
-  const input = $('#tagForm')[{ setup: 'newSetup', mistake: 'newMistake', day: 'newDay' }[kind]];
+  const input = $('#tagForm')[kind === 'setup' ? 'newSetup' : 'newMistake'];
   const name = input.value.trim();
-  if (!name) return toast(`Type a name for the ${kind === 'day' ? 'day tag' : kind}.`);
+  if (!name) return toast(`Type a name for the ${kind}.`);
   if (tagTaken(kind, name)) return toast(`"${name}" already exists.`);
   saveTag({ id: U.uid(), kind, createdAt: Date.now() }, { name });
   input.value = '';
@@ -882,13 +880,12 @@ function recapHead(date, stars, nav) {
 function recapEditor(date, nav) {
   const d = ui.recapDraft && ui.recapDraft.date === date ? ui.recapDraft : { text: '', rating: 0, tags: [] };
   const saved = !!recapOf(date);
-  const list = Tags.active('day');
-  for (const id of d.tags) if (!list.some(t => t.id === id) && Tags.get(id)) list.push(Tags.get(id));
+  const picked = d.tags.map(Tags.get).filter(Boolean);
   return `<div class="recapedit">
     ${recapHead(date, recapStars(date, d.rating), nav)}
     <textarea class="recaptext" data-date="${date}" rows="2" maxlength="2000" aria-label="Day recap"
       placeholder="How did the day go? e.g. no displacement, didn't check the news…">${U.esc(d.text)}</textarea>
-    <div class="daytags">${list.map(t => `<button type="button" class="dtag${d.tags.includes(t.id) ? ' on' : ''}" data-act="recapTag" data-date="${date}" data-id="${U.esc(t.id)}" aria-pressed="${d.tags.includes(t.id)}">${U.esc(t.name)}</button>`).join('')}<button type="button" class="catedit" data-act="manageTags">✏️ Edit</button></div>
+    <div class="daytags">${picked.map(t => `<button type="button" class="dtag on" data-act="recapTag" data-date="${date}" data-id="${U.esc(t.id)}" aria-label="Remove ${U.esc(t.name)}">${U.esc(t.name)} <span aria-hidden="true">×</span></button>`).join('')}<button type="button" class="catedit" data-act="pickDayTags" data-date="${date}">🏷 Tags</button></div>
     <div class="actions">
       ${saved || ui.recapDraft && ui.recapDraft.date === date ? `<button type="button" class="btn ghost" data-act="recapCancel">Cancel</button>` : ''}
       <button type="button" class="btn primary grow" data-act="recapSave" data-date="${date}">Save</button>
@@ -910,6 +907,89 @@ function recapView(date, nav) {
 
 function recapBox(date, nav) {
   return recapEditing(date) ? recapEditor(date, nav) : recapView(date, nav);
+}
+
+// ---------- Day tags sheet ----------
+
+// Ticks go into the recap's draft; the recap still needs Save.
+const dts = { date: null, editing: null };
+
+function dayTagRow(t, on) {
+  const id = U.esc(t.id);
+  if (dts.editing === t.id) {
+    return `<li class="catrow dtrow"><input data-daytag="${id}" value="${U.esc(t.name)}" maxlength="24" aria-label="Tag name">
+      <button type="button" class="mini" data-act="dayTagDone">✓</button></li>`;
+  }
+  return `<li class="catrow dtrow">
+    <label class="dtcheck"><input type="checkbox" data-daypick="${id}"${on ? ' checked' : ''}><span>${U.esc(t.name)}</span></label>
+    <button type="button" class="icon" data-act="renameDayTag" data-id="${id}" aria-label="Rename ${U.esc(t.name)}">✏️</button>
+    <button type="button" class="icon" data-act="delDayTag" data-id="${id}" aria-label="Delete ${U.esc(t.name)}">🗑</button>
+  </li>`;
+}
+
+function renderDayTags() {
+  const d = recapDraft(dts.date);
+  const list = Tags.active('day');
+  for (const id of d.tags) if (!list.some(t => t.id === id) && Tags.get(id)) list.push(Tags.get(id));
+  $('#dayTagList').innerHTML = list.map(t => dayTagRow(t, d.tags.includes(t.id))).join('')
+    || '<li class="muted small">No tags yet. Add one below.</li>';
+  const hidden = Tags.all('day').filter(t => t.hidden && !d.tags.includes(t.id));
+  $('#hiddenDayTags').innerHTML = hidden.length ? `<h3 class="sub">Hidden</h3><ul class="catlist">${hidden.map(t =>
+    `<li class="catrow tagrow hid"><span class="dtname">${U.esc(t.name)}</span><button type="button" class="mini" data-act="showTag" data-id="${U.esc(t.id)}">Show again</button></li>`).join('')}</ul>` : '';
+  const box = $('#dayTagList [data-daytag]');
+  if (box) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
+}
+
+function openDayTags(date) {
+  dts.date = date;
+  dts.editing = null;
+  $('#dayTagForm').newDay.value = '';
+  renderDayTags();
+  $('#dayTagDlg').showModal();
+}
+
+function renameDayTag(el) {
+  const t = Tags.get(el.dataset.daytag);
+  dts.editing = null;
+  const name = el.value.trim();
+  if (t && name && name !== t.name) {
+    if (tagTaken('day', name, t.id)) toast(`"${name}" already exists.`);
+    else saveTag(t, { name });
+  } else if (t && !name) {
+    toast('A tag needs a name.');
+  }
+  renderDayTags();
+}
+
+function addDayTag() {
+  const input = $('#dayTagForm').newDay;
+  const name = input.value.trim();
+  if (!name) return toast('Type a name for the tag.');
+  if (tagTaken('day', name)) return toast(`"${name}" already exists.`);
+  const id = U.uid();
+  saveTag({ id, kind: 'day', createdAt: Date.now() }, { name });
+  recapDraft(dts.date).tags.push(id);
+  input.value = '';
+  renderDayTags();
+  toast(`Added ${name}`);
+}
+
+// A tag already on saved recaps is hidden instead, so those recaps keep it.
+function delDayTag(id) {
+  const t = Tags.get(id);
+  if (!t) return;
+  const d = recapDraft(dts.date);
+  if (Tags.uses(id)) {
+    if (!confirm(`"${t.name}" is on ${Tags.uses(id)} saved recap${Tags.uses(id) === 1 ? '' : 's'}. Hide it? Those recaps keep it.`)) return;
+    d.tags = d.tags.filter(x => x !== id);
+    setTagHidden(id, true);
+  } else {
+    if (!confirm(`Delete "${t.name}"?`)) return;
+    d.tags = d.tags.filter(x => x !== id);
+    // Built-in tags have no stored item yet, so save a delete marker.
+    Store.upsert('tags', { id, deleted: true });
+  }
+  renderDayTags();
 }
 
 // A day's recap in a list: stars, tags and the start of the text; tap to edit.
@@ -2959,6 +3039,11 @@ Past days and today stay as they are.`)) return;
     if (box) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
   },
   recapSave(el) { saveRecap(el.dataset.date); },
+  pickDayTags(el) { recapDraft(el.dataset.date); openDayTags(el.dataset.date); },
+  renameDayTag(el) { dts.editing = el.dataset.id; renderDayTags(); },
+  dayTagDone() { dts.editing = null; renderDayTags(); },
+  delDayTag(el) { delDayTag(el.dataset.id); },
+  addDayTag() { addDayTag(); },
   recapShift(el) {
     const d = U.addDays(recapDay(), +el.dataset.v);
     ui.recapDay = d < U.today() ? d : null;
@@ -3059,7 +3144,12 @@ document.addEventListener('click', e => {
 
 document.addEventListener('change', async e => {
   const el = e.target;
-  if (el.dataset.act === 'toggleTask') {
+  if (el.dataset.daypick) {
+    const d = recapDraft(dts.date);
+    d.tags = el.checked ? [...d.tags.filter(x => x !== el.dataset.daypick), el.dataset.daypick] : d.tags.filter(x => x !== el.dataset.daypick);
+  } else if (el.dataset.daytag) {
+    renameDayTag(el);
+  } else if (el.dataset.act === 'toggleTask') {
     const t = Store.get('tasks', el.dataset.id);
     if (t) {
       Store.upsert('tasks', { ...t, done: el.checked, doneAt: el.checked ? Date.now() : null });
@@ -3245,11 +3335,21 @@ $('#tagForm').addEventListener('keydown', e => {
   e.preventDefault();
   if (e.target.name === 'newSetup') addTag('setup');
   else if (e.target.name === 'newMistake') addTag('mistake');
-  else if (e.target.name === 'newDay') addTag('day');
   else e.target.blur();
 });
 
 // Tags edited from inside the trade form show up there right away.
+// Enter in the new tag box adds it; in a rename box it saves the name.
+$('#dayTagForm').addEventListener('keydown', e => {
+  if (e.key !== 'Enter' || e.target.tagName !== 'INPUT') return;
+  e.preventDefault();
+  if (e.target.name === 'newDay') addDayTag();
+  else e.target.blur();
+});
+
+// Picked day tags show on the recap box when the sheet closes.
+$('#dayTagDlg').addEventListener('close', () => redrawRecap());
+
 $('#tagDlg').addEventListener('close', () => {
   if ($('#tradeDlg').open) { const t = formTags(); renderTagPick(t.setup, t.mistakes); }
 });
@@ -3280,6 +3380,7 @@ Store.on(() => {
   if ($('#weekDlg').open) renderWeek(ui.weekOpen);
   if ($('#budgetViewDlg').open) renderBudget(ui.budgetOpen);
   if ($('#recapDlg').open) renderRecapDlg();
+  if ($('#dayTagDlg').open && !$('#dayTagList [data-daytag]')) renderDayTags();
 });
 
 // Redraw when an activity's time passes, so it shows Late without a reload.
