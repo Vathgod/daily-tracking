@@ -253,6 +253,17 @@
     </form>
   </dialog>
 
+  <!-- One day's trading recap -->
+  <dialog id="recapDlg" class="sheet">
+    <div class="sheetbody">
+      <div class="sheethead">
+        <h2 id="recapTitle" tabindex="-1" autofocus>Day recap</h2>
+        <button type="button" class="icon" data-act="closeDlg" aria-label="Close">×</button>
+      </div>
+      <div id="recapBody"></div>
+    </div>
+  </dialog>
+
   <!-- Budget for a trip or event -->
   <dialog id="budgetDlg" class="sheet">
     <form id="budgetForm" autocomplete="off" novalidate>
@@ -359,10 +370,10 @@
   <dialog id="tagDlg" class="sheet">
     <form id="tagForm" autocomplete="off" novalidate>
       <div class="sheethead">
-        <h2 tabindex="-1" autofocus>Setups &amp; mistakes</h2>
+        <h2 tabindex="-1" autofocus>Tags</h2>
         <button type="button" class="icon" data-act="closeDlg" aria-label="Close">×</button>
       </div>
-      <p class="muted small">Tap a name to change it. Tags already used on trades can be hidden with 🙈; they stay on old trades and in Stats.</p>
+      <p class="muted small">Tap a name to change it. Tags already used can be hidden with 🙈; they stay on old trades, recaps and in Stats.</p>
       <h3 class="sub">Setups</h3>
       <ul id="setupList" class="catlist"></ul>
       <div class="catrow tagrow add">
@@ -374,6 +385,12 @@
       <div class="catrow tagrow add">
         <input name="newMistake" maxlength="24" placeholder="New mistake, e.g. Early exit" aria-label="Mistake name">
         <button type="button" class="btn primary" data-act="addTag" data-v="mistake">Add</button>
+      </div>
+      <h3 class="sub">Day tags</h3>
+      <ul id="dayTagList" class="catlist"></ul>
+      <div class="catrow tagrow add">
+        <input name="newDay" maxlength="24" placeholder="New day tag, e.g. Low volume" aria-label="Day tag name">
+        <button type="button" class="btn primary" data-act="addTag" data-v="day">Add</button>
       </div>
       <div id="hiddenTags"></div>
     </form>

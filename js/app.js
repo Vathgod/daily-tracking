@@ -26,6 +26,8 @@ const ui = {
   histAll: false,
   weekOpen: null,
   budgetOpen: null,
+  recapOpen: null, // date of the day recap open in its sheet
+  recapDraft: null, // { date, text, rating, tags } while a recap is written or edited
   budgetsAll: false,
   walletWs: null, // Sunday of the week shown on the wallet card (null = this week)
   acct: lsGet('dt.acct', 'all'),
@@ -622,11 +624,11 @@ function delPair(id) {
 // ---------- Trade tags ----------
 
 function tagRow(t) {
-  const n = Tags.trades(t.id).length;
+  const n = Tags.uses(t.id);
   const act = t.hidden
     ? `<button type="button" class="mini" data-act="showTag" data-id="${U.esc(t.id)}">Show again</button>`
     : n
-      ? `<button type="button" class="icon" data-act="hideTag" data-id="${U.esc(t.id)}" aria-label="Hide ${U.esc(t.name)}" title="Hide (keeps it on ${n} trade${n === 1 ? '' : 's'})">🙈</button>`
+      ? `<button type="button" class="icon" data-act="hideTag" data-id="${U.esc(t.id)}" aria-label="Hide ${U.esc(t.name)}" title="Hide (keeps it on ${n} ${t.kind === 'day' ? 'day' : 'trade'}${n === 1 ? '' : 's'})">🙈</button>`
       : `<button type="button" class="icon del" data-act="delTag" data-id="${U.esc(t.id)}" aria-label="Delete ${U.esc(t.name)}">×</button>`;
   return `<li class="catrow tagrow${t.hidden ? ' hid' : ''}">
     <input data-tag="${U.esc(t.id)}" value="${U.esc(t.name)}" maxlength="24" aria-label="Name">
@@ -638,6 +640,7 @@ function renderTags() {
   const empty = '<li class="muted small">None yet. Add one below.</li>';
   $('#setupList').innerHTML = Tags.active('setup').map(tagRow).join('') || empty;
   $('#mistakeList').innerHTML = Tags.active('mistake').map(tagRow).join('') || empty;
+  $('#dayTagList').innerHTML = Tags.active('day').map(tagRow).join('') || empty;
   const hidden = Tags.all().filter(t => t.hidden);
   $('#hiddenTags').innerHTML = hidden.length
     ? `<h3 class="sub">Hidden</h3><ul class="catlist">${hidden.map(tagRow).join('')}</ul>` : '';
@@ -647,6 +650,7 @@ function openTags() {
   const f = $('#tagForm');
   f.newSetup.value = '';
   f.newMistake.value = '';
+  f.newDay.value = '';
   renderTags();
   $('#tagDlg').showModal();
 }
@@ -671,9 +675,9 @@ function renameTag(el) {
 }
 
 function addTag(kind) {
-  const input = $('#tagForm')[kind === 'setup' ? 'newSetup' : 'newMistake'];
+  const input = $('#tagForm')[{ setup: 'newSetup', mistake: 'newMistake', day: 'newDay' }[kind]];
   const name = input.value.trim();
-  if (!name) return toast(`Type a name for the ${kind}.`);
+  if (!name) return toast(`Type a name for the ${kind === 'day' ? 'day tag' : kind}.`);
   if (tagTaken(kind, name)) return toast(`"${name}" already exists.`);
   saveTag({ id: U.uid(), kind, createdAt: Date.now() }, { name });
   input.value = '';
@@ -686,13 +690,13 @@ function setTagHidden(id, hidden) {
   if (!t) return;
   saveTag(t, { hidden });
   renderTags();
-  toast(hidden ? `${t.name} hidden. Its trades keep it.` : `${t.name} is back`);
+  toast(hidden ? `${t.name} hidden. Its ${t.kind === 'day' ? 'days' : 'trades'} keep it.` : `${t.name} is back`);
 }
 
 function delTag(id) {
   const t = Tags.get(id);
   if (!t) return;
-  if (Tags.trades(id).length) return setTagHidden(id, true);
+  if (Tags.uses(id)) return setTagHidden(id, true);
   if (!confirm(`Delete "${t.name}"?`)) return;
   // Built-in tags have no stored item yet, so save a delete marker.
   Store.upsert('tags', { id, deleted: true });
@@ -776,6 +780,146 @@ function sessTag(s) {
   return s ? `<span class="sess s-${sessSlug(s)}">${U.esc(s)}</span>` : '';
 }
 
+// ---------- Day recap ----------
+
+// One recap per day (all accounts): what happened in the trading day, as
+// text, day tags and a 1-5 rating of how well the rules were followed.
+function recapOf(date) {
+  const r = Store.get('recaps', date);
+  return r && !r.deleted ? r : null;
+}
+
+function setRecap(date, patch) {
+  const old = recapOf(date);
+  const r = { ...(old || { id: date, createdAt: Date.now() }), ...patch };
+  r.text = r.text || '';
+  r.rating = r.rating || 0;
+  r.tags = (r.tags || []).filter(id => Tags.get(id));
+  if (!r.text && !r.tags.length && !r.rating) {
+    if (old) Store.remove('recaps', date);
+    return;
+  }
+  if (old && (old.text || '') === r.text && (old.rating || 0) === r.rating && String(old.tags || []) === String(r.tags)) return;
+  Store.upsert('recaps', r);
+}
+
+// A saved recap only changes on Save. While it's being written or edited, the
+// text, stars and tags live in this draft (one day at a time).
+function recapDraft(date) {
+  if (!ui.recapDraft || ui.recapDraft.date !== date) {
+    const r = recapOf(date) || {};
+    ui.recapDraft = { date, text: r.text || '', rating: r.rating || 0, tags: [...(r.tags || [])] };
+  }
+  return ui.recapDraft;
+}
+
+// The box is open while there's a draft for the day, or nothing saved yet.
+function recapEditing(date) {
+  return (ui.recapDraft && ui.recapDraft.date === date) || !recapOf(date);
+}
+
+function saveRecap(date) {
+  const d = recapDraft(date);
+  const had = !!recapOf(date);
+  ui.recapDraft = null;
+  setRecap(date, { text: d.text.trim(), rating: d.rating, tags: d.tags });
+  if (!recapOf(date)) {
+    redrawRecap();
+    if (had) toast('Recap removed');
+    else toast('Write something, a star or a tag first.');
+    return;
+  }
+  toast('Recap saved 📝');
+}
+
+function redrawRecap() {
+  render();
+  if ($('#recapDlg').open) renderRecapDlg();
+}
+
+// Redraws `host` without losing the cursor in the recap box being typed in.
+function keepRecap(host, draw) {
+  const el = document.activeElement;
+  const was = el && el.classList.contains('recaptext') && host.contains(el)
+    ? { date: el.dataset.date, a: el.selectionStart, b: el.selectionEnd } : null;
+  draw();
+  for (const box of host.querySelectorAll('.recaptext')) {
+    fitBox(box);
+    if (was && box.dataset.date === was.date) { box.focus(); box.setSelectionRange(was.a, was.b); }
+  }
+}
+
+function recapStars(date, n, ro) {
+  if (ro) return `<span class="stars ro" aria-label="${n} of 5">${'★'.repeat(n)}<i>${'★'.repeat(5 - n)}</i></span>`;
+  return `<span class="stars" role="group" aria-label="How well you traded">${[1, 2, 3, 4, 5].map(i =>
+    `<button type="button" class="star${i <= n ? ' on' : ''}" data-act="recapStar" data-date="${date}" data-v="${i}" aria-label="${i} star${i === 1 ? '' : 's'}">★</button>`).join('')}</span>`;
+}
+
+function recapTitle(date) {
+  return `📝 ${date === U.today() ? "Today's recap" : 'Day recap'}`;
+}
+
+function recapEditor(date) {
+  const d = ui.recapDraft && ui.recapDraft.date === date ? ui.recapDraft : { text: '', rating: 0, tags: [] };
+  const saved = !!recapOf(date);
+  const list = Tags.active('day');
+  for (const id of d.tags) if (!list.some(t => t.id === id) && Tags.get(id)) list.push(Tags.get(id));
+  return `<div class="recapedit">
+    <div class="row recaphead"><h4 class="sub">${recapTitle(date)}</h4>${recapStars(date, d.rating)}</div>
+    <textarea class="recaptext" data-date="${date}" rows="2" maxlength="2000" aria-label="Day recap"
+      placeholder="How did the day go? e.g. no displacement, didn't check the news…">${U.esc(d.text)}</textarea>
+    <div class="daytags">${list.map(t => `<button type="button" class="dtag${d.tags.includes(t.id) ? ' on' : ''}" data-act="recapTag" data-date="${date}" data-id="${U.esc(t.id)}" aria-pressed="${d.tags.includes(t.id)}">${U.esc(t.name)}</button>`).join('')}<button type="button" class="catedit" data-act="manageTags">✏️ Edit</button></div>
+    <div class="actions">
+      ${saved || ui.recapDraft && ui.recapDraft.date === date ? `<button type="button" class="btn ghost" data-act="recapCancel">Cancel</button>` : ''}
+      <button type="button" class="btn primary grow" data-act="recapSave" data-date="${date}">Save</button>
+    </div>
+  </div>`;
+}
+
+// A saved recap, read only, with an Edit button.
+function recapView(date) {
+  const r = recapOf(date);
+  const tags = (r.tags || []).map(Tags.name).filter(Boolean);
+  return `<div class="recapedit">
+    <div class="row recaphead"><h4 class="sub">${recapTitle(date)}</h4>${r.rating ? recapStars(date, r.rating, true) : ''}</div>
+    ${r.text ? `<p class="recapsaved">${U.esc(r.text)}</p>` : ''}
+    ${tags.length ? `<div class="rl-top">${tags.map(n => `<span class="rl-tag">${U.esc(n)}</span>`).join('')}</div>` : ''}
+    <button type="button" class="btn ghost block" data-act="recapEdit" data-date="${date}">✏️ Edit</button>
+  </div>`;
+}
+
+function recapBox(date) {
+  return recapEditing(date) ? recapEditor(date) : recapView(date);
+}
+
+// A day's recap in a list: stars, tags and the start of the text; tap to edit.
+function recapLine(date) {
+  const r = recapOf(date);
+  if (!r) return '';
+  const tags = (r.tags || []).map(Tags.name).filter(Boolean);
+  return `<button type="button" class="recapline" data-act="openRecap" data-v="${date}">
+    <span class="rl-top">📝${r.rating ? recapStars(date, r.rating, true) : ''}${tags.map(n => `<span class="rl-tag">${U.esc(n)}</span>`).join('')}</span>
+    ${r.text ? `<span class="rl-text">${U.esc(r.text)}</span>` : ''}
+  </button>`;
+}
+
+function renderRecapDlg() {
+  const date = ui.recapOpen;
+  const st = tradesIn(date, date, 'all', 'all');
+  const p = sumPnl(st);
+  $('#recapTitle').textContent = U.dayLabel(date);
+  keepRecap($('#recapBody'), () => {
+    $('#recapBody').innerHTML = `<p class="muted small">${st.length ? `${st.length} trade${st.length === 1 ? '' : 's'} · <b class="${U.cls(p)}">${U.money(p)}</b>` : 'No trades this day.'}</p>
+      ${recapBox(date)}`;
+  });
+}
+
+function openRecap(date) {
+  ui.recapOpen = date;
+  renderRecapDlg();
+  $('#recapDlg').showModal();
+}
+
 function tradeGroups(trades) {
   const groups = new Map();
   for (const t of trades) {
@@ -784,7 +928,10 @@ function tradeGroups(trades) {
   }
   return [...groups].map(([date, list]) => {
     const p = sumPnl(list);
-    return `<h3 class="dayhead"><span>${U.esc(U.dayLabel(date))}</span><span class="${U.cls(p)}">${U.money(p)}</span></h3>
+    const recap = recapLine(date);
+    return `<h3 class="dayhead"><span>${U.esc(U.dayLabel(date))}</span><span class="dh-right">${recap ? ''
+      : `<button type="button" class="dh-recap" data-act="openRecap" data-v="${date}" aria-label="Write a recap for this day" title="Day recap">📝</button>`}<span class="${U.cls(p)}">${U.money(p)}</span></span></h3>
+      ${recap}
       <div class="tradelist">${list.map(tradeCard).join('')}</div>`;
   }).join('');
 }
@@ -831,6 +978,7 @@ function viewTrades() {
       ${lossLimitBlock(allToday)}
     </div>
     <button type="button" class="btn primary block" data-act="addTrade">+ Add trade</button>
+    <div class="card recapcard">${recapBox(today)}</div>
 
     ${chips('tradeRange', ui.tradeRange, [['today', 'Today'], ['week', 'Week'], ['month', 'Month'], ['all', 'All']])}
     ${chips('tradePair', ui.tradePair, [['all', 'All pairs'], ...Pairs.all().filter(p => !p.hidden || p.name === ui.tradePair).map(p => [U.esc(p.name), U.esc(p.name)])])}
@@ -1937,6 +2085,7 @@ function viewCalendar() {
   if (moneyMode) for (const e of pick(Money.list(first, last))) spend[e.date] = (spend[e.date] || 0) + Money.usd(e);
   const daySpend = moneyMode ? Money.byDay(first, last, true) : {};
   const budgetDays = budgetMode ? budgetDaysIn(first, last) : new Set();
+  const recapDays = !tasksMode && !moneyMode && !newsMode ? new Set(Store.list('recaps').map(r => r.id)) : new Set();
   const dueBy = {};
   if (tasksMode) for (const n of notesSorted()) if (n.due >= first && n.due <= last) (dueBy[n.due] ||= []).push(n);
   let cells = '';
@@ -1959,7 +2108,8 @@ function viewCalendar() {
       ? b && b.tasks ? `<span class="dp">${Math.round(pct)}%</span><span class="dt">${b.done}/${b.tasks}</span>` : ''
       : b && b.n ? `<span class="dp">${U.moneyShort(b.pnl)}</span><span class="dt">${b.n} trade${b.n > 1 ? 's' : ''}</span>` : '';
     const due = dueBy[ds];
-    const pin = due ? `<span class="duepin${due.some(n => isHot(n, today)) ? ' hot' : ''}" title="${due.length} due">📌${due.length > 1 ? due.length : ''}</span>` : '';
+    const pin = recapDays.has(ds) ? '<span class="duepin hot" title="Day recap">📝</span>'
+      : due ? `<span class="duepin${due.some(n => isHot(n, today)) ? ' hot' : ''}" title="${due.length} due">📌${due.length > 1 ? due.length : ''}</span>` : '';
     cells += `<button type="button" class="day ${cls}${ds === today ? ' today' : ''}${ds === ui.calDay ? ' sel' : ''}" data-act="calDay" data-v="${ds}">
       <span class="dn">${d}</span>${main}${pin}
     </button>`;
@@ -2000,6 +2150,7 @@ function viewCalendar() {
     const p = sumPnl(st);
     detail = `<div class="card">
       <h3 class="dayhead"><span>${U.esc(U.dayLabel(sel))}</span>${st.length ? `<span class="${U.cls(p)}">${U.money(p)}</span>` : ''}</h3>
+      ${recapLine(sel)}
       ${st.length ? `<div class="tradelist">${st.map(tradeCard).join('')}</div>` : '<p class="muted small">No trades.</p>'}
     </div>`;
   }
@@ -2594,7 +2745,7 @@ function render() {
   const noteDraft = $('#noteInput') ? $('#noteInput').value : '';
   const noteFocus = document.activeElement && document.activeElement.id === 'noteInput';
   const editDraft = $('#editInput') && $('#editInput').closest('form').dataset.id === ui.editing ? $('#editInput').value : null;
-  $('#view').innerHTML = VIEWS[ui.tab]();
+  keepRecap($('#view'), () => { $('#view').innerHTML = VIEWS[ui.tab](); });
   document.body.dataset.tab = ui.tab;
   for (const b of $$('.tabbar button')) b.classList.toggle('on', b.dataset.v === ui.tab);
   renderHeader();
@@ -2765,6 +2916,30 @@ Past days and today stay as they are.`)) return;
   showPair(el) { setPairHidden(el.dataset.id, false); },
   delPair(el) { delPair(el.dataset.id); },
   manageTags() { openTags(); },
+  openRecap(el) { openRecap(el.dataset.v); },
+  recapStar(el) {
+    const d = recapDraft(el.dataset.date);
+    const n = +el.dataset.v;
+    // Tapping the current rating again clears it.
+    d.rating = d.rating === n ? 0 : n;
+    redrawRecap();
+  },
+  recapTag(el) {
+    const d = recapDraft(el.dataset.date);
+    const id = el.dataset.id;
+    d.tags = d.tags.includes(id) ? d.tags.filter(x => x !== id) : [...d.tags, id];
+    redrawRecap();
+  },
+  recapEdit(el) {
+    const host = el.closest('#recapBody') || $('#view');
+    ui.recapDraft = null;
+    recapDraft(el.dataset.date);
+    redrawRecap();
+    const box = host.querySelector(`.recaptext[data-date="${el.dataset.date}"]`);
+    if (box) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
+  },
+  recapSave(el) { saveRecap(el.dataset.date); },
+  recapCancel() { ui.recapDraft = null; redrawRecap(); },
   addTag(el) { addTag(el.dataset.v); },
   hideTag(el) { setTagHidden(el.dataset.id, true); },
   showTag(el) { setTagHidden(el.dataset.id, false); },
@@ -2936,6 +3111,7 @@ document.addEventListener('change', async e => {
 
 document.addEventListener('input', e => {
   if (e.target.classList.contains('growbox')) fitBox(e.target);
+  if (e.target.classList.contains('recaptext')) { fitBox(e.target); recapDraft(e.target.dataset.date).text = e.target.value; return; }
   if (e.target.name === 'pnl') form.pnlTouched = e.target.value.trim() !== '';
   if (e.target.dataset.shot) {
     const x = form.shots[e.target.dataset.shot];
@@ -3044,6 +3220,7 @@ $('#tagForm').addEventListener('keydown', e => {
   e.preventDefault();
   if (e.target.name === 'newSetup') addTag('setup');
   else if (e.target.name === 'newMistake') addTag('mistake');
+  else if (e.target.name === 'newDay') addTag('day');
   else e.target.blur();
 });
 
@@ -3077,6 +3254,7 @@ Store.on(() => {
   if ($('#settingsDlg').open) renderSyncInfo();
   if ($('#weekDlg').open) renderWeek(ui.weekOpen);
   if ($('#budgetViewDlg').open) renderBudget(ui.budgetOpen);
+  if ($('#recapDlg').open) renderRecapDlg();
 });
 
 // Redraw when an activity's time passes, so it shows Late without a reload.

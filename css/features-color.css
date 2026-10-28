@@ -153,6 +153,11 @@ body[data-tab="money"] .statrow { border-top-color: var(--c-money); }
 .budgets .histrow { border-left-color: var(--violet); }
 .budgets .histrow:has(.h-left.neg) { border-left-color: var(--neg); }
 .budgetpick input:checked + span { background: #7c3aed; }
+.recapcard { border-top: 3px solid var(--violet); }
+.dtag.on { background: #7c3aed; border-color: transparent; color: #fff; }
+.recapline { border-left: 4px solid var(--violet); }
+.recapedit .rl-tag { font-size: 12px; padding: 3px 9px; background: color-mix(in srgb, var(--violet) 20%, transparent); color: var(--violet); }
+.recapedit .stars.ro { font-size: 17px; }
 .day.bud { background: color-mix(in srgb, var(--violet) 26%, var(--surface)); border-color: transparent; }
 .day.bud .dp { color: var(--text); }
 .legend i.lg-bud { background: var(--violet); }

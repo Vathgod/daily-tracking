@@ -195,6 +195,41 @@
 .w-head .nav { min-width: 32px; min-height: 32px; padding: 2px; font-size: 20px; }
 .w-head .nav:disabled { opacity: .3; }
 .w-links { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px 16px; }
+/* Day recap */
+.recapedit { display: grid; gap: 8px; }
+.recaphead { gap: 8px; flex-wrap: wrap; }
+.recaphead .sub { margin: 0; }
+.recaptext {
+  display: block; width: 100%; resize: none; min-height: 64px; max-height: 40vh; overflow-y: auto;
+  font: inherit; font-size: 15px; color: var(--text); background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px;
+}
+.recapsaved { margin: 0; font-size: 15px; white-space: pre-line; overflow-wrap: anywhere; }
+.recapedit .actions { margin-top: 2px; }
+.recaptext:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.daytags { display: flex; flex-wrap: wrap; gap: 6px; }
+.dtag {
+  border: 1px solid var(--border); background: var(--surface-2); border-radius: 999px;
+  padding: 6px 11px; font-size: 13px; font-weight: 600; color: var(--text); cursor: pointer;
+}
+.daytags .catedit { padding: 6px 11px; font-size: 13px; }
+.stars { display: inline-flex; gap: 2px; }
+.star { border: 0; background: none; padding: 2px; font-size: 22px; line-height: 1; color: var(--border); cursor: pointer; }
+.star.on { color: #f5b301; }
+.stars.ro { font-size: 12px; letter-spacing: 1px; color: #f5b301; }
+.stars.ro i { font-style: normal; color: var(--border); }
+.recapline {
+  width: 100%; display: grid; gap: 4px; text-align: left; font: inherit; color: var(--text);
+  border: 0; border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; background: var(--surface-2); cursor: pointer;
+}
+.rl-top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; }
+.rl-tag { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--surface); color: var(--muted); }
+.rl-text { font-size: 13px; color: var(--muted); white-space: pre-line; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.dh-right { display: inline-flex; align-items: center; gap: 8px; }
+.dh-recap { border: 0; background: none; padding: 0 2px; font-size: 13px; line-height: 1; opacity: .55; cursor: pointer; }
+#recapBody { display: grid; gap: 10px; }
+#recapBody p { margin: 0; }
+
 .budget .w-head { gap: 10px; }
 .budget .w-head .w-title { justify-items: start; text-align: left; }
 .b-when { flex: none; font-size: 12px; font-weight: 700; padding: 4px 9px; border-radius: 999px; background: var(--surface-2); }

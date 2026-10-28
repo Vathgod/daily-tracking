@@ -1,6 +1,7 @@
 'use strict';
 
-// Trade tags: one setup per trade, any number of mistakes. The built-ins keep
+// Trade tags: one setup per trade, any number of mistakes. Day tags go on a
+// day's recap ("No displacement", "Missed news"...). The built-ins keep
 // their ids so every device agrees; a stored item (or delete marker) with the
 // same id wins, like pairs. Trades store tag ids, so renaming just works.
 
@@ -13,6 +14,12 @@ const DEFAULT_TAGS = [
   { id: 'm-noplan', kind: 'mistake', name: 'No plan' },
   { id: 'm-revenge', kind: 'mistake', name: 'Revenge' },
   { id: 'm-overtrade', kind: 'mistake', name: 'Overtrading' },
+  { id: 'd-nodisp', kind: 'day', name: 'No displacement' },
+  { id: 'd-news', kind: 'day', name: 'Missed news' },
+  { id: 'd-choppy', kind: 'day', name: 'Choppy market' },
+  { id: 'd-overtrade', kind: 'day', name: 'Overtraded' },
+  { id: 'd-plan', kind: 'day', name: 'Followed plan' },
+  { id: 'd-patient', kind: 'day', name: 'Patient' },
 ];
 
 const Tags = {
@@ -37,4 +44,7 @@ const Tags = {
   setup(trade) { return trade.setup && Tags.get(trade.setup) ? trade.setup : ''; },
 
   trades(id) { return Store.list('trades').filter(t => t.setup === id || (t.mistakes || []).includes(id)); },
+
+  // Trades or day recaps that carry the tag.
+  uses(id) { return Tags.trades(id).length + Store.list('recaps').filter(r => (r.tags || []).includes(id)).length; },
 };
