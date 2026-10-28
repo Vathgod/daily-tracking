@@ -2173,6 +2173,32 @@ function weekTotal(date) {
   </div>`;
 }
 
+// Week's money for the Sun–Sat spending week around a day. Tap to see the whole week.
+function moneyWeekTotal(date) {
+  const w = Money.week(Money.weekStart(date));
+  const short = d => U.fmtDate(d, { day: 'numeric', month: 'short' });
+  const wknd = w.offWeek > 0 ? ` · Weekend ${Money.fmt(w.offWeek, false)}` : '';
+  const n = w.all.length;
+  const sub = w.a ? `Got ${Money.fmt(w.got, false)} · Spent ${Money.fmt(w.spent, false)}${wknd}`
+    : n ? `${n} item${n === 1 ? '' : 's'} · No week's money set${wknd}` : 'No spending this week';
+  const right = w.a ? `<b class="${w.left < 0 ? 'neg' : 'pos'}">${Money.fmt(Math.abs(w.left), false)} ${w.left < 0 ? 'over' : 'left'}</b>`
+    : n ? `<b>${Money.fmt(w.spent + w.offWeek, false)}</b>` : '';
+  return `<button type="button" class="weektotal big${w.a ? (w.left < 0 ? ' wt-neg' : ' wt-pos') : ''}" data-act="openWeek" data-v="${w.ws}">
+    <span>👛 Week · ${short(w.ws)} – ${short(U.addDays(w.ws, 6))}</span>
+    ${right}
+    <small>${sub}</small>
+  </button>`;
+}
+
+// What's left of a budget. Tap to open it.
+function budgetTotal(b) {
+  const st = Money.budgetStats(b);
+  return `<button type="button" class="weektotal ${st.left < 0 ? 'wt-neg' : 'wt-pos'}" data-act="openBudget" data-id="${U.esc(b.id)}">
+    <span>${U.esc(b.emoji || '🎒')} ${U.esc(b.name)}<small>Spent ${Money.fmt(st.spent, false)} of ${Money.fmt(st.got, false)}</small></span>
+    <b class="${U.cls(st.left)}">${Money.fmt(Math.abs(st.left), false)} ${st.left < 0 ? 'over' : 'left'}</b>
+  </button>`;
+}
+
 function viewCalendar() {
   const [y, m] = ui.calMonth.split('-').map(Number);
   const first = `${ui.calMonth}-01`;
@@ -2242,7 +2268,7 @@ function viewCalendar() {
     const over = !budgetMode && Money.dailyBudget(sel) && Money.dayTotal(ex) > Money.dailyBudget(sel);
     detail = `<div class="card">
       <h3 class="dayhead"><span>${U.esc(U.dayLabel(sel))}</span>${ex.length ? `<span class="${over ? 'neg' : ''}">${Money.fmt(t, false)}</span>` : ''}</h3>
-      ${budgetMode && on.length ? `<p class="muted small">${on.map(b => `${U.esc(b.emoji || '🎒')} ${U.esc(b.name)}`).join(' · ')}</p>` : ''}
+      ${budgetMode ? on.map(budgetTotal).join('') : moneyWeekTotal(sel)}
       ${ex.length ? `<div class="explist">${ex.map(expRow).join('')}</div>` : `<p class="muted small">${budgetMode && !on.length ? 'No budget on this day.' : 'No spending.'}</p>`}
       ${!budgetMode ? `<button type="button" class="btn ghost block addday" data-act="addExp" data-v="${sel}" data-b="">+ Add expense for this day</button>`
         : on.length ? `<button type="button" class="btn ghost block addday" data-act="addExp" data-v="${sel}" data-b="${U.esc(on[0].id)}">+ Add expense for this day</button>` : ''}
