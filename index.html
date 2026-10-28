@@ -217,6 +217,9 @@
         <label class="field"><span>Date</span><input type="date" name="date"></label>
         <label class="field"><span>Time</span><input type="time" name="time"></label>
       </div>
+      <div id="budgetPickBox" class="field" hidden><span>Pay from</span>
+        <div id="budgetPick" class="catpick budgetpick" role="radiogroup" aria-label="Pay from"></div>
+      </div>
       <label class="field"><span>Note (optional)</span><input name="note" maxlength="200" placeholder="e.g. lunch with friends"></label>
       <label class="checkrow"><input type="checkbox" name="extra"> 🧾 Extra – not from the daily limit</label>
 
@@ -248,6 +251,48 @@
         <button type="submit" class="btn primary grow">Save</button>
       </div>
     </form>
+  </dialog>
+
+  <!-- Budget for a trip or event -->
+  <dialog id="budgetDlg" class="sheet">
+    <form id="budgetForm" autocomplete="off" novalidate>
+      <div class="sheethead">
+        <h2 id="budgetTitle" tabindex="-1" autofocus>🎒 New budget</h2>
+        <button type="button" class="icon" data-act="closeDlg" aria-label="Close">×</button>
+      </div>
+      <p class="muted small">Money for a trip or event, kept apart from the week's money.</p>
+      <div class="amtrow budname">
+        <label class="field emo"><span>Emoji</span><input name="emoji" maxlength="4"></label>
+        <label class="field grow"><span>Name</span><input name="name" maxlength="40" placeholder="e.g. Kampot trip"></label>
+      </div>
+      <div class="amtrow">
+        <label class="field grow"><span>Budget</span><input name="amount" inputmode="decimal" placeholder="0"></label>
+        <div class="seg two cur" role="radiogroup" aria-label="Currency">
+          <label><input type="radio" name="cur" value="KHR"><span>៛ Riel</span></label>
+          <label><input type="radio" name="cur" value="USD"><span>$ Dollar</span></label>
+        </div>
+      </div>
+      <div class="grid2">
+        <label class="field"><span>From</span><input type="date" name="start"></label>
+        <label class="field"><span>To</span><input type="date" name="end"></label>
+      </div>
+      <p id="budgetHint" class="pnlhint"></p>
+      <div class="actions">
+        <button type="button" id="delBudget" class="btn danger" data-act="delBudget" hidden>Delete</button>
+        <button type="submit" class="btn primary grow">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- One budget's spending -->
+  <dialog id="budgetViewDlg" class="sheet">
+    <div class="sheetbody">
+      <div class="sheethead">
+        <h2 id="budgetViewTitle" tabindex="-1" autofocus>Budget</h2>
+        <button type="button" class="icon" data-act="closeDlg" aria-label="Close">×</button>
+      </div>
+      <div id="budgetViewBody" class="weekbody"></div>
+    </div>
   </dialog>
 
   <!-- One week of spending -->

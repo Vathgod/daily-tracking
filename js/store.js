@@ -38,7 +38,7 @@ const Store = (() => {
   const LS_STATE = 'dt.state';
   const LS_CFG = 'dt.config';
   const DATA_PATH = 'data.json';
-  const KINDS = ['tasks', 'trades', 'accounts', 'expenses', 'categories', 'allowances', 'pairs', 'routines', 'tags', 'notes'];
+  const KINDS = ['tasks', 'trades', 'accounts', 'expenses', 'categories', 'allowances', 'budgets', 'pairs', 'routines', 'tags', 'notes'];
 
   let state = blank();
   const cfg = { owner: '', repo: 'daily-tracking-data', token: '' };
@@ -51,7 +51,7 @@ const Store = (() => {
   const shotUrls = new Map();
 
   function blank() {
-    return { tasks: {}, trades: {}, accounts: {}, expenses: {}, categories: {}, allowances: {}, pairs: {}, routines: {}, tags: {}, notes: {}, settings: { lossLimit: 0, updatedAt: 0 } };
+    return { tasks: {}, trades: {}, accounts: {}, expenses: {}, categories: {}, allowances: {}, budgets: {}, pairs: {}, routines: {}, tags: {}, notes: {}, settings: { lossLimit: 0, updatedAt: 0 } };
   }
 
   function normalize(o) {
@@ -68,6 +68,7 @@ const Store = (() => {
       put(s.expenses, o.expenses);
       put(s.categories, o.categories);
       put(s.allowances, o.allowances);
+      put(s.budgets, o.budgets);
       put(s.pairs, o.pairs);
       put(s.routines, o.routines);
       put(s.tags, o.tags);
@@ -88,6 +89,7 @@ const Store = (() => {
       expenses: Object.values(s.expenses).sort(byDate),
       categories: Object.values(s.categories).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)),
       allowances: Object.values(s.allowances).sort((a, b) => a.id.localeCompare(b.id)),
+      budgets: Object.values(s.budgets).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)),
       pairs: Object.values(s.pairs).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)),
       routines: Object.values(s.routines).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)),
       tags: Object.values(s.tags).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)),

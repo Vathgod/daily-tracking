@@ -100,8 +100,8 @@ const Money = {
   total(list) { return list.reduce((s, e) => s + Money.usd(e), 0); },
 
   // Extra spending (a laptop, rent...) still counts in the week, but not
-  // against the daily limit.
-  dayTotal(list) { return Money.total(list.filter(e => !e.extra)); },
+  // against the daily limit. Budget spending counts in neither.
+  dayTotal(list) { return Money.total(list.filter(e => !e.extra && !Money.inBudget(e))); },
 
   // [{ id, usd, n }] biggest first
   byCat(list) {
@@ -125,10 +125,10 @@ const Money = {
     return Object.keys(METHODS).filter(k => m[k] > 0).map(k => `${METHODS[k]} ${Money.fmt(m[k], false)}`).join(' · ');
   },
 
-  // date -> $ spent (leaving out extra spending when `daily` is set)
+  // date -> $ spent (leaving out extra and budget spending when `daily` is set)
   byDay(from, to, daily = false) {
     const m = {};
-    for (const e of Money.list(from, to)) if (!daily || !e.extra) m[e.date] = (m[e.date] || 0) + Money.usd(e);
+    for (const e of Money.list(from, to)) if (!daily || (!e.extra && !Money.inBudget(e))) m[e.date] = (m[e.date] || 0) + Money.usd(e);
     return m;
   },
 
@@ -167,7 +167,7 @@ const Money = {
 
   week(ws) {
     const a = Money.allowance(ws);
-    const all = Money.list(ws, U.addDays(ws, 6));
+    const all = Money.weekOnly(Money.list(ws, U.addDays(ws, 6)));
     const list = all.filter(e => !Money.isWeekend(e.date));
     const weekend = all.filter(e => Money.isWeekend(e.date));
     const spent = Money.total(list);
@@ -178,7 +178,7 @@ const Money = {
   // Sundays of every week with money set or spending, newest first.
   weeks() {
     const s = new Set(Store.list('allowances').map(a => a.id));
-    for (const e of Store.list('expenses')) s.add(Money.weekStart(e.date));
+    for (const e of Store.list('expenses')) if (!Money.inBudget(e)) s.add(Money.weekStart(e.date));
     return [...s].sort().reverse();
   },
 
@@ -208,7 +208,7 @@ const Money = {
   // Spent from Monday up to the same weekday as today (Friday at most), in the week starting `ws`.
   soFar(ws) {
     const days = Math.min(5, (U.weekdayMon(U.today()) + 1) % 7);
-    return Money.total(Money.list(U.addDays(ws, 1), U.addDays(ws, days)));
+    return Money.total(Money.list(U.addDays(ws, 1), U.addDays(ws, days)).filter(e => !Money.inBudget(e)));
   },
 
   // Average spent on each weekday (Sun..Sat) over the given weeks.
@@ -224,5 +224,47 @@ const Money = {
     if (Money.isWeekend(date)) return 0;
     const a = Money.allowance(Money.weekStart(date));
     return a ? Money.usd(a) / SPEND_DAYS : 0;
+  },
+
+  // A budget is money for a trip or event over any dates (3 days, 2 weeks...),
+  // kept apart from the week's money: what's spent from it doesn't count in
+  // the week or against the daily limit.
+  budgets() {
+    return Store.list('budgets').sort((a, b) => b.start.localeCompare(a.start) || (b.createdAt || 0) - (a.createdAt || 0));
+  },
+
+  budget(id) {
+    const b = id && Store.get('budgets', id);
+    return b && !b.deleted ? b : null;
+  },
+
+  // Paid from a budget that still exists.
+  inBudget(e) { return !!Money.budget(e.budget); },
+
+  weekOnly(list) { return list.filter(e => !Money.inBudget(e)); },
+  budgetOnly(list) { return list.filter(Money.inBudget); },
+
+  // Budgets whose dates include `date`.
+  budgetsOn(date) { return Money.budgets().filter(b => b.start <= date && date <= b.end); },
+
+  budgetLabel(b) {
+    const o = { weekday: 'short', day: 'numeric', month: 'short' };
+    return b.start === b.end ? U.fmtDate(b.start, o) : `${U.fmtDate(b.start, o)} – ${U.fmtDate(b.end, o)}`;
+  },
+
+  budgetStats(b) {
+    const today = U.today();
+    const list = Store.list('expenses').filter(e => e.budget === b.id)
+      .sort((x, y) => (y.date + (y.time || '')).localeCompare(x.date + (x.time || '')) || (y.createdAt || 0) - (x.createdAt || 0));
+    const spent = Money.total(list);
+    const got = Money.usd(b);
+    const days = U.daysBetween(b.start, b.end) + 1;
+    const status = today < b.start ? 'soon' : today > b.end ? 'done' : 'on';
+    const day = status === 'on' ? U.daysBetween(b.start, today) + 1 : 0;
+    const daysLeft = status === 'on' ? days - day + 1 : status === 'soon' ? days : 0; // today included
+    const spentToday = status === 'on' ? Money.total(list.filter(e => e.date === today)) : 0;
+    // What's left (today's spending put back) shared over the days left, so today gets its fair part.
+    const daily = daysLeft ? (got - spent + spentToday) / daysLeft : NaN;
+    return { b, list, spent, got, left: got - spent, days, status, day, daysLeft, spentToday, daily };
   },
 };

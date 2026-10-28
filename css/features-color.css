@@ -143,6 +143,19 @@ body[data-tab="money"] .statrow { border-top-color: var(--c-money); }
 .wallet.hit { border-top-color: var(--neg); }
 .histrow { border-left: 4px solid var(--c-money); }
 .histrow:has(.h-left.neg) { border-left-color: var(--neg); }
+/* Budgets: violet, so they don't look like the week's wallet */
+.wallet.budget { border-top-color: var(--violet); background: linear-gradient(160deg, color-mix(in srgb, var(--violet) 14%, var(--surface)), var(--surface) 70%); }
+.wallet.budget > .bar i { background: linear-gradient(90deg, var(--violet), var(--pink)); }
+.wallet.budget.warn { border-top-color: var(--amber); }
+.wallet.budget.warn > .bar i { background: var(--amber); }
+.wallet.budget.hit { border-top-color: var(--neg); }
+.b-when { background: color-mix(in srgb, var(--violet) 18%, transparent); color: var(--violet); }
+.budgets .histrow { border-left-color: var(--violet); }
+.budgets .histrow:has(.h-left.neg) { border-left-color: var(--neg); }
+.budgetpick input:checked + span { background: #7c3aed; }
+.day.bud { background: color-mix(in srgb, var(--violet) 26%, var(--surface)); border-color: transparent; }
+.day.bud .dp { color: var(--text); }
+.legend i.lg-bud { background: var(--violet); }
 .wallet .limit { margin-top: 2px; }
 .wallet .limit .bar i { background: linear-gradient(90deg, #22c55e, #10b981); }
 .wallet .limit.warn .bar i { background: var(--amber); }

@@ -21,8 +21,12 @@ const ui = {
   newsHigh: lsGet('dt.newsHigh', '1') === '1', // Calendar → News: high impact only
   newsMine: lsGet('dt.newsMine', '1') === '1', // Calendar → News: only my pairs' currencies
   moneyRange: 'week',
+  moneyView: lsGet('dt.moneyView', 'week'), // Money tab: 'week' (week's money) or 'budget'
+  calMoney: lsGet('dt.calMoney', 'week'), // Calendar → Money: 'week' or 'budget'
   histAll: false,
   weekOpen: null,
+  budgetOpen: null,
+  budgetsAll: false,
   walletWs: null, // Sunday of the week shown on the wallet card (null = this week)
   acct: lsGet('dt.acct', 'all'),
   dailyOn: false,
@@ -1137,7 +1141,8 @@ function saveAcct() {
 
 function expRow(e) {
   const c = Money.cat(e.cat);
-  const meta = [e.time, METHODS[methodOf(e.method)], e.extra && '🧾 Extra'].filter(Boolean).map(U.esc).join(' · ');
+  const b = Money.budget(e.budget);
+  const meta = [e.time, METHODS[methodOf(e.method)], b ? `${b.emoji || '🎒'} ${b.name}` : e.extra && '🧾 Extra'].filter(Boolean).map(U.esc).join(' · ');
   return `<button type="button" class="exp" data-act="openExp" data-id="${e.id}">
     <span class="ex-emo" aria-hidden="true">${U.esc(c.emoji || '•')}</span>
     <span class="ex-main"><b>${U.esc(c.name)}</b><small>${meta}</small>${e.note ? `<small class="note">${U.esc(e.note)}</small>` : ''}</span>
@@ -1286,24 +1291,111 @@ function weekHistory() {
   </div>`;
 }
 
+// ---------- Budgets ----------
+
+// "Day 2 of 3", "Starts tomorrow", "Ended"
+function budgetWhen(st) {
+  if (st.status === 'on') return `Day ${st.day} of ${st.days}`;
+  if (st.status === 'done') return 'Ended';
+  const n = U.daysBetween(U.today(), st.b.start);
+  return n === 1 ? 'Starts tomorrow' : `Starts in ${n} days`;
+}
+
+// A budget's card: what's left, and while it runs, today against an even share of it.
+function budgetCard(st) {
+  const { b, left, got, spent } = st;
+  const pctLeft = got > 0 ? Math.max(0, Math.min(100, left / got * 100)) : 0;
+  const level = left < 0 ? 'hit' : spent > 0 && pctLeft <= 25 ? 'warn' : '';
+  const third = st.status === 'on' ? ['Days left', st.daysLeft]
+    : st.status === 'soon' ? ['Per day', Money.fmt(got / st.days, false)]
+    : ['Avg / day', Money.fmt(spent / st.days, false)];
+  const top = Money.byCat(st.list).slice(0, 3).map(r => `${U.esc(Money.catLabel(r.id))} ${Money.fmt(r.usd, false)}`).join(' · ');
+  const recap = st.status !== 'done' ? ''
+    : left < 0 ? `😬 Spent ${Money.fmt(spent, false)} of ${Money.fmtOrig(b)}, ${Money.fmt(-left, false)} over`
+    : `🎉 Spent ${Money.fmt(spent, false)} of ${Money.fmtOrig(b)}, ${Money.fmt(left, false)} left over`;
+  return `<div class="card wallet budget ${level}">
+    <div class="row w-head">
+      <span class="w-title"><b>${U.esc(b.emoji || '🎒')} ${U.esc(b.name)}</b><span class="muted small">${U.esc(Money.budgetLabel(b))}</span></span>
+      <span class="b-when">${budgetWhen(st)}</span>
+    </div>
+    <div class="w-left">
+      <span class="muted small">${left < 0 ? 'Over budget by' : st.status === 'done' ? 'Left over' : 'Left to spend'}</span>
+      <span class="big ${left < 0 ? 'neg' : ''}">${Money.fmt(Math.abs(left), false)}</span>
+      ${b.cur === 'KHR' ? `<span class="muted small">≈ ${Money.fmtKHR(Math.abs(left) * KHR_PER_USD)}</span>` : ''}
+    </div>
+    <div class="bar"><i style="width:${pctLeft}%"></i></div>
+    <div class="w-stats">
+      <div><span>Budget</span><b>${Money.fmtOrig(b)}</b></div>
+      <div><span>Spent</span><b>${Money.fmt(spent, false)}</b></div>
+      <div><span>${third[0]}</span><b>${third[1]}</b></div>
+    </div>
+    ${st.status === 'on' && st.daily > 0 ? todayBlock(st.spentToday, st.daily) : ''}
+    ${st.status === 'on' && st.daily > 0 ? `<p class="muted small w-note">Today's share = what's left ÷ ${st.daysLeft} day${st.daysLeft === 1 ? '' : 's'}</p>` : ''}
+    ${top ? `<p class="muted small w-note">${top}</p>` : ''}
+    ${recap ? `<p class="small w-note">${recap}</p>` : ''}
+    <button type="button" class="linkbtn" data-act="openBudget" data-id="${U.esc(b.id)}">See spending</button>
+  </div>`;
+}
+
+// Cards for budgets running now, starting within a week, or ended in the last 3 days.
+function budgetCards() {
+  const today = U.today();
+  return Money.budgets().map(Money.budgetStats)
+    .filter(st => st.status === 'on'
+      || (st.status === 'soon' && U.daysBetween(today, st.b.start) <= 7)
+      || (st.status === 'done' && U.daysBetween(st.b.end, today) <= 3))
+    .sort((x, y) => x.b.start.localeCompare(y.b.start))
+    .map(budgetCard).join('');
+}
+
+function budgetList() {
+  const all = Money.budgets();
+  const shown = ui.budgetsAll ? all : all.slice(0, 5);
+  return `<div class="card history budgets">
+    <h4 class="sub">🎒 Budgets</h4>
+    ${all.length ? `<div class="histlist">${shown.map(b => {
+      const st = Money.budgetStats(b);
+      return `<button type="button" class="histrow" data-act="openBudget" data-id="${U.esc(b.id)}">
+        <span class="h-main"><span class="h-date">${U.esc(b.emoji || '🎒')} ${U.esc(b.name)}</span>
+          <span class="h-nums">${U.esc(Money.budgetLabel(b))} · Budget <b>${Money.fmtOrig(b)}</b> · Spent <b>${Money.fmt(st.spent, false)}</b></span></span>
+        <span class="h-left ${U.cls(st.left)}">${Money.fmt(st.left)}<small>${st.left < 0 ? 'over' : 'left'}</small></span>
+      </button>`;
+    }).join('')}</div>`
+      : `<p class="muted small">Going on a trip or planning an event? Set money aside for just those days. It's kept apart from the week's money and the daily limit.</p>`}
+    ${all.length > 5 ? `<button type="button" class="btn ghost block" data-act="budgetsAll">${ui.budgetsAll ? 'Show less' : `Show all ${all.length} budgets`}</button>` : ''}
+    <button type="button" class="btn ghost block" data-act="newBudget">+ New budget</button>
+  </div>`;
+}
+
 // The wallet card's week; it never goes past this week.
 function walletWeek() {
   const cur = Money.weekStart(U.today());
   return ui.walletWs && ui.walletWs < cur ? ui.walletWs : cur;
 }
 
+// Money tab, Budget side: running budgets, then all of them.
+function viewBudgets() {
+  const on = Money.budgetsOn(U.today());
+  return `${budgetCards()}
+    ${on.length ? `<button type="button" class="btn primary block" data-act="addExp" data-b="${U.esc(on[0].id)}">+ Add expense</button>` : ''}
+    ${budgetList()}`;
+}
+
 function viewMoney() {
+  const views = chips('moneyView', ui.moneyView, [['week', "👛 Week money"], ['budget', '🎒 Budget']]);
+  if (ui.moneyView === 'budget') return `<section class="view">${views}${viewBudgets()}</section>`;
   const today = U.today();
-  const todays = Money.list(today, today);
+  const todays = Money.weekOnly(Money.list(today, today));
   const spent = Money.total(todays);
   const monthFrom = today.slice(0, 8) + '01';
-  const month = Money.total(Money.list(monthFrom, today));
+  const month = Money.total(Money.weekOnly(Money.list(monthFrom, today)));
   const [from, to] = ui.moneyRange === 'week' ? [Money.weekStart(today), today] : rangeDates(ui.moneyRange);
-  const list = Money.list(from, to);
+  const list = Money.weekOnly(Money.list(from, to));
   const total = Money.total(list);
   const m = Money.byMethod(list);
 
   return `<section class="view">
+    ${views}
     ${spendBanner(Money.dayTotal(todays))}
     ${lastWeekRecap()}
     ${walletCard(walletWeek())}
@@ -1312,7 +1404,7 @@ function viewMoney() {
       <div><span>This month</span><b>${Money.fmt(month, false)}</b></div>
       <div><span>Avg / day</span><b>${Money.fmt(Money.perDay(month, monthFrom, today), false)}</b></div>
     </div>
-    <button type="button" class="btn primary block" data-act="addExp">+ Add expense</button>
+    <button type="button" class="btn primary block" data-act="addExp" data-b="">+ Add expense</button>
 
     ${chips('moneyRange', ui.moneyRange, [['today', 'Today'], ['week', 'This week'], ['month', 'Month'], ['all', 'All']])}
     <p class="muted small sumline">${list.length} item${list.length === 1 ? '' : 's'} · <b>${Money.fmt(total, false)}</b>
@@ -1401,6 +1493,116 @@ function openWeek(ws) {
   $('#weekDlg').showModal();
 }
 
+// ---------- Budget form ----------
+
+const bform = { id: null };
+
+function openBudgetForm(id) {
+  const b = Money.budget(id);
+  const f = $('#budgetForm');
+  f.reset();
+  bform.id = b ? b.id : null;
+  const today = U.today();
+  $('#budgetTitle').textContent = b ? 'Edit budget' : '🎒 New budget';
+  f.emoji.value = b ? b.emoji || '' : '🎒';
+  f.name.value = b ? b.name : '';
+  f.amount.value = b ? b.amount : '';
+  f.cur.value = b ? b.cur : 'USD';
+  curPick(f);
+  f.start.value = b ? b.start : today;
+  f.end.value = b ? b.end : U.addDays(today, 2);
+  $('#delBudget').hidden = !b;
+  budgetHint();
+  $('#budgetDlg').showModal();
+}
+
+function budgetHint() {
+  const f = $('#budgetForm');
+  const cur = formCur(f);
+  const v = Money.parse(f.amount.value, cur);
+  const [s, e] = [f.start.value, f.end.value];
+  const days = s && e && e >= s ? U.daysBetween(s, e) + 1 : 0;
+  const parts = [];
+  if (v > 0 && !Money.nz()) parts.push(cur === 'KHR' ? `= ${Money.fmt(v / KHR_PER_USD, false)}` : `= ${Money.fmtKHR(v * KHR_PER_USD)}`);
+  if (days) parts.push(`${days} day${days === 1 ? '' : 's'}`);
+  if (days && v > 0) parts.push(`about ${Money.fmt(Money.usd({ amount: v, cur }) / days, false)} a day`);
+  if (s && e && e < s) parts.push('the end date is before the start date');
+  $('#budgetHint').textContent = parts.join(' · ');
+}
+
+function saveBudget() {
+  const f = $('#budgetForm');
+  const cur = formCur(f);
+  const v = Money.parse(f.amount.value, cur);
+  const name = f.name.value.trim();
+  if (!name) return toast('Give the budget a name.');
+  if (!(v > 0)) return toast('Enter how much money the budget has.');
+  if (!f.start.value || !f.end.value) return toast('Set the dates.');
+  if (f.end.value < f.start.value) return toast('The end date is before the start date.');
+  const old = Money.budget(bform.id);
+  const b = Store.upsert('budgets', {
+    ...(old || { id: U.uid(), createdAt: Date.now() }),
+    name,
+    emoji: f.emoji.value.trim() || '🎒',
+    amount: String(cur === 'KHR' ? Math.round(v) : Math.round(v * 100) / 100),
+    cur,
+    start: f.start.value,
+    end: f.end.value,
+  });
+  $('#budgetDlg').close();
+  toast(old ? 'Budget updated' : `Budget saved ${b.emoji}`);
+}
+
+// Its spending isn't deleted: it goes back to counting in the week's money.
+function delBudget() {
+  const b = Money.budget(bform.id);
+  if (!b) return;
+  const used = Store.list('expenses').filter(e => e.budget === b.id);
+  const msg = used.length
+    ? `Delete "${b.name}"? Its ${used.length} expense${used.length === 1 ? '' : 's'} will count in the week's money again.`
+    : `Delete "${b.name}"?`;
+  if (!confirm(msg)) return;
+  for (const e of used) {
+    const { budget, ...rest } = e;
+    Store.upsert('expenses', rest);
+  }
+  Store.remove('budgets', b.id);
+  $('#budgetDlg').close();
+  if ($('#budgetViewDlg').open) $('#budgetViewDlg').close();
+  toast('Budget deleted');
+}
+
+// ---------- Budget detail ----------
+
+function renderBudget(id) {
+  const b = Money.budget(id);
+  if (!b) { $('#budgetViewDlg').close(); return; }
+  const st = Money.budgetStats(b);
+  const today = U.today();
+  const daysIn = st.status === 'done' ? st.days : st.day; // days of it so far
+  $('#budgetViewTitle').textContent = `${b.emoji || '🎒'} ${b.name}`;
+  $('#budgetViewBody').innerHTML = `
+    <p class="muted small">${U.esc(Money.budgetLabel(b))} · ${st.days} day${st.days === 1 ? '' : 's'} · ${budgetWhen(st)}</p>
+    <div class="tiles">
+      <div class="tile"><span>Budget</span><b>${Money.fmtOrig(b)}</b>${b.cur === 'KHR' ? `<small>= ${Money.fmt(st.got, false)}</small>` : ''}</div>
+      <div class="tile"><span>Spent</span><b>${Money.fmt(st.spent, false)}</b><small>${st.list.length} item${st.list.length === 1 ? '' : 's'}</small></div>
+      <div class="tile"><span>${st.left < 0 ? 'Over budget' : st.status === 'done' ? 'Left over' : 'Left'}</span><b class="${U.cls(st.left)}">${Money.fmt(Math.abs(st.left), false)}</b></div>
+      <div class="tile"><span>Avg / day</span><b>${daysIn ? Money.fmt(st.spent / daysIn, false) : '–'}</b><small>plan ${Money.fmt(st.got / st.days, false)}</small></div>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn ghost grow" data-act="editBudget" data-id="${U.esc(b.id)}">Edit budget</button>
+      <button type="button" class="btn primary grow" data-act="addExp" data-v="${st.status === 'on' ? today : b.start}" data-b="${U.esc(b.id)}">+ Add expense</button>
+    </div>
+    ${catBreakdown(st.list)}
+    ${st.list.length ? expGroups(st.list) : '<p class="empty">Nothing spent from this budget yet.</p>'}`;
+}
+
+function openBudget(id) {
+  ui.budgetOpen = id;
+  renderBudget(id);
+  $('#budgetViewDlg').showModal();
+}
+
 // ---------- Expense form ----------
 
 const eform = { id: null };
@@ -1411,11 +1613,35 @@ function renderCatPick(sel) {
     '<button type="button" class="catedit" data-act="manageCats">✏️ Edit</button>';
 }
 
-function openExpForm(id, date) {
+// "Pay from" shows when the date falls in a budget. A new expense starts on the
+// budget (or `sel`); the expense's own budget stays pickable if its dates change.
+function renderBudgetPick(sel) {
+  const f = $('#expForm');
+  const opts = Money.budgetsOn(f.date.value);
+  const own = Money.budget(eform.budget);
+  if (own && !opts.some(b => b.id === own.id)) opts.push(own);
+  if (sel !== '' && !opts.some(b => b.id === sel)) sel = opts.length ? opts[0].id : '';
+  $('#budgetPickBox').hidden = !opts.length;
+  $('#budgetPick').innerHTML = [['', "👛 Week's money"], ...opts.map(b => [b.id, `${b.emoji || '🎒'} ${b.name}`])].map(([v, l]) =>
+    `<label><input type="radio" name="budget" value="${U.esc(v)}"${v === sel ? ' checked' : ''}><span>${U.esc(l)}</span></label>`).join('');
+  budgetPicked();
+}
+
+function formBudget() {
+  return ($('#budgetPick input:checked') || {}).value || '';
+}
+
+// Budget spending is already outside the daily limit, so Extra doesn't apply.
+function budgetPicked() {
+  $('#expForm').extra.closest('label').hidden = !!formBudget();
+}
+
+function openExpForm(id, date, budget) {
   const e = id ? Store.get('expenses', id) : null;
   const f = $('#expForm');
   f.reset();
   eform.id = id || null;
+  eform.budget = e && e.budget;
   $('#expTitle').textContent = e ? 'Edit expense' : 'New expense';
   f.amount.value = e ? e.amount : '';
   f.cur.value = e ? e.cur : lsGet('dt.lastCur', 'KHR');
@@ -1426,6 +1652,7 @@ function openExpForm(id, date) {
   f.time.value = e ? e.time || '' : U.nowTime();
   f.note.value = e ? e.note || '' : '';
   f.extra.checked = !!(e && e.extra);
+  renderBudgetPick(e ? (Money.budget(e.budget) ? e.budget : '') : budget);
   $('#delExp').hidden = !e;
   expHint();
   $('#expDlg').showModal();
@@ -1438,8 +1665,13 @@ function expHint() {
   const cur = formCur(f);
   const usd = Money.usd({ amount: v, cur });
   let txt = Money.nz() ? '' : cur === 'KHR' ? `= ${Money.fmt(usd, false)}` : `= ${Money.fmtKHR(v * KHR_PER_USD)}`;
-  const limit = f.date.value ? Money.dailyBudget(f.date.value) : 0;
-  if (limit && f.extra.checked) {
+  const b = Money.budget(formBudget());
+  const limit = !b && f.date.value ? Money.dailyBudget(f.date.value) : 0;
+  if (b) {
+    const st = Money.budgetStats(b);
+    const left = st.left + Money.total(st.list.filter(x => x.id === eform.id)) - usd;
+    txt += `${txt ? ' · ' : ''}${b.name} will have ${left < 0 ? `${Money.fmt(-left, false)} over` : `${Money.fmt(left, false)} left`} of ${Money.fmtOrig(b)}`;
+  } else if (limit && f.extra.checked) {
     txt += `${txt ? ' · ' : ''}not counted in the daily limit`;
   } else if (limit) {
     const before = Money.dayTotal(Money.list(f.date.value, f.date.value).filter(e => e.id !== eform.id));
@@ -1459,6 +1691,7 @@ function saveExp() {
   const old = eform.id ? Store.get('expenses', eform.id) : null;
   const date = f.date.value;
   const before = Money.dayTotal(Money.list(date, date).filter(e => e.id !== eform.id));
+  const budget = formBudget();
   const item = {
     ...(old || { id: U.uid(), createdAt: Date.now() }),
     amount: String(cur === 'KHR' ? Math.round(amt) : Math.round(amt * 100) / 100),
@@ -1466,8 +1699,10 @@ function saveExp() {
     method: methodOf(f.method.value),
     date, time: f.time.value,
     note: f.note.value.trim(),
-    extra: f.extra.checked,
+    extra: !budget && f.extra.checked,
   };
+  if (budget) item.budget = budget;
+  else delete item.budget;
   Store.upsert('expenses', item);
   if (cur !== 'NZD') lsSet('dt.lastCur', cur);
   lsSet('dt.lastMethod', item.method);
@@ -1475,7 +1710,11 @@ function saveExp() {
   toast(old ? 'Expense updated' : `Saved ${Money.fmt(Money.usd(item), false)}`);
   const limit = Money.dailyBudget(date);
   const after = before + Money.usd(item);
-  if (limit && !item.extra && date === U.today() && after > limit) {
+  const b = Money.budget(budget);
+  const bLeft = b ? Money.budgetStats(b).left : 0;
+  if (b && bLeft < 0) {
+    setTimeout(() => toast(`🛑 ${b.name} is ${Money.fmt(-bLeft, false)} over budget.`), 2700);
+  } else if (!b && limit && !item.extra && date === U.today() && after > limit) {
     setTimeout(() => toast(`🛑 Over today's limit by ${Money.fmt(after - limit, false)}.`), 2700);
   }
 }
@@ -1543,7 +1782,7 @@ function moneyMonthStats(first, last, spend) {
   const avg = Money.perDay(total, first, last < today ? last : today);
   const limit = Money.dailyBudget(today) || Object.keys(spend).some(Money.dailyBudget);
   const over = Object.entries(Money.byDay(first, last, true)).filter(([d, v]) => Money.dailyBudget(d) && v > Money.dailyBudget(d)).length;
-  const top = Money.byCat(Money.list(first, last))[0];
+  const top = Money.byCat(Money.weekOnly(Money.list(first, last)))[0];
   return `<div class="card statrow">
       <div><span>Month spent</span><b>${Money.fmt(total, false)}</b></div>
       <div><span>Avg / day</span><b>${Money.fmt(avg, false)}</b></div>
@@ -1551,6 +1790,28 @@ function moneyMonthStats(first, last, spend) {
         : `<div><span>Top</span><b class="toptxt">${top ? U.esc(Money.catLabel(top.id)) : '–'}</b></div>`}
     </div>
     ${limit ? `<div class="legend"><span><i class="lg-pos"></i>Within daily limit</span><span><i class="lg-neg"></i>Over daily limit</span></div>` : ''}`;
+}
+
+// Calendar → Money → Budget: what came out of budgets this month.
+function budgetMonthStats(first, last, spend) {
+  const total = Object.values(spend).reduce((a, b) => a + b, 0);
+  const n = Money.budgets().filter(b => b.start <= last && b.end >= first).length;
+  const top = Money.byCat(Money.budgetOnly(Money.list(first, last)))[0];
+  return `<div class="card statrow">
+      <div><span>From budgets</span><b>${Money.fmt(total, false)}</b></div>
+      <div><span>Budgets</span><b>${n}</b></div>
+      <div><span>Top</span><b class="toptxt">${top ? U.esc(Money.catLabel(top.id)) : '–'}</b></div>
+    </div>
+    <div class="legend"><span><i class="lg-bud"></i>Budget days</span></div>`;
+}
+
+// Dates in first..last that fall in a budget.
+function budgetDaysIn(first, last) {
+  const days = new Set();
+  for (const b of Money.budgets()) {
+    for (let d = b.start < first ? first : b.start; d <= b.end && d <= last; d = U.addDays(d, 1)) days.add(d);
+  }
+  return days;
 }
 
 // ---------- Calendar: News ----------
@@ -1670,8 +1931,12 @@ function viewCalendar() {
   const newsMode = ui.calMode === 'news';
   if (newsMode) loadNews();
   const news = newsMode ? newsByDay() : {};
-  const spend = moneyMode ? Money.byDay(first, last) : {};
+  const budgetMode = moneyMode && ui.calMoney === 'budget';
+  const pick = budgetMode ? Money.budgetOnly : Money.weekOnly;
+  const spend = {};
+  if (moneyMode) for (const e of pick(Money.list(first, last))) spend[e.date] = (spend[e.date] || 0) + Money.usd(e);
   const daySpend = moneyMode ? Money.byDay(first, last, true) : {};
+  const budgetDays = budgetMode ? budgetDaysIn(first, last) : new Set();
   const dueBy = {};
   if (tasksMode) for (const n of notesSorted()) if (n.due >= first && n.due <= last) (dueBy[n.due] ||= []).push(n);
   let cells = '';
@@ -1681,9 +1946,10 @@ function viewCalendar() {
     const b = byDay[ds];
     const pct = b && b.tasks ? b.done / b.tasks * 100 : NaN;
     const sp = spend[ds] || 0;
-    const limit = moneyMode ? Money.dailyBudget(ds) : 0;
+    const limit = moneyMode && !budgetMode ? Money.dailyBudget(ds) : 0;
     const nd = news[ds];
     const cls = newsMode ? (nd ? (nd.High ? 'nw-high' : nd.Medium ? 'nw-medium' : '') : '')
+      : budgetMode ? (budgetDays.has(ds) ? 'bud' : '')
       : moneyMode ? (sp > 0 ? (limit ? ((daySpend[ds] || 0) > limit ? 'neg' : 'pos') : 'spent') : '')
       : tasksMode ? (b && b.tasks && (ds < today || pct >= 100) ? 'b-' + Perf.band(pct) : '') : b && b.n ? U.cls(b.pnl) : '';
     const main = newsMode
@@ -1705,12 +1971,16 @@ function viewCalendar() {
   if (sel && newsMode) {
     detail = newsDay(sel);
   } else if (sel && moneyMode) {
-    const ex = Money.list(sel, sel);
+    const ex = pick(Money.list(sel, sel));
     const t = Money.total(ex);
+    const on = Money.budgetsOn(sel);
+    const over = !budgetMode && Money.dailyBudget(sel) && Money.dayTotal(ex) > Money.dailyBudget(sel);
     detail = `<div class="card">
-      <h3 class="dayhead"><span>${U.esc(U.dayLabel(sel))}</span>${ex.length ? `<span class="${Money.dailyBudget(sel) && Money.dayTotal(ex) > Money.dailyBudget(sel) ? 'neg' : ''}">${Money.fmt(t, false)}</span>` : ''}</h3>
-      ${ex.length ? `<div class="explist">${ex.map(expRow).join('')}</div>` : '<p class="muted small">No spending.</p>'}
-      <button type="button" class="btn ghost block addday" data-act="addExp" data-v="${sel}">+ Add expense for this day</button>
+      <h3 class="dayhead"><span>${U.esc(U.dayLabel(sel))}</span>${ex.length ? `<span class="${over ? 'neg' : ''}">${Money.fmt(t, false)}</span>` : ''}</h3>
+      ${budgetMode && on.length ? `<p class="muted small">${on.map(b => `${U.esc(b.emoji || '🎒')} ${U.esc(b.name)}`).join(' · ')}</p>` : ''}
+      ${ex.length ? `<div class="explist">${ex.map(expRow).join('')}</div>` : `<p class="muted small">${budgetMode && !on.length ? 'No budget on this day.' : 'No spending.'}</p>`}
+      ${!budgetMode ? `<button type="button" class="btn ghost block addday" data-act="addExp" data-v="${sel}" data-b="">+ Add expense for this day</button>`
+        : on.length ? `<button type="button" class="btn ghost block addday" data-act="addExp" data-v="${sel}" data-b="${U.esc(on[0].id)}">+ Add expense for this day</button>` : ''}
     </div>`;
   } else if (sel && tasksMode) {
     const tk = tasksOn(sel);
@@ -1742,7 +2012,8 @@ function viewCalendar() {
     </div>
     ${chips('calMode', ui.calMode, [['pnl', '💵 PnL'], ['tasks', '☑ Activities'], ['money', '💰 Money'], ['news', '📰 News']])}
     ${tasksMode || moneyMode || newsMode ? '' : acctChips()}
-    ${newsMode ? newsStats() : moneyMode ? moneyMonthStats(first, last, spend) : tasksMode ? `<div class="card statrow">
+    ${moneyMode ? chips('calMoney', ui.calMoney, [['week', "👛 Week money"], ['budget', '🎒 Budget']]) : ''}
+    ${newsMode ? newsStats() : budgetMode ? budgetMonthStats(first, last, spend) : moneyMode ? moneyMonthStats(first, last, spend) : tasksMode ? `<div class="card statrow">
       <div><span>Avg completion</span><b>${isFinite(ms.avg) ? Math.round(ms.avg) + '%' : '–'}</b></div>
       <div><span>Perfect days</span><b class="pos">${ms.perfect}</b></div>
       <div><span>Days 70%+</span><b>${ms.good}/${ms.tracked}</b></div>
@@ -2476,7 +2747,9 @@ Past days and today stay as they are.`)) return;
   },
   tradePair(el) { ui.tradePair = el.dataset.v; render(); },
   moneyRange(el) { ui.moneyRange = el.dataset.v; render(); },
-  addExp(el) { openExpForm(null, el.dataset.v); },
+  moneyView(el) { ui.moneyView = el.dataset.v; lsSet('dt.moneyView', ui.moneyView); render(); },
+  calMoney(el) { ui.calMoney = el.dataset.v; lsSet('dt.calMoney', ui.calMoney); render(); },
+  addExp(el) { openExpForm(null, el.dataset.v, el.dataset.b); },
   openExp(el) { openExpForm(el.dataset.id); },
   delExp() {
     if (eform.id && confirm('Delete this expense?')) {
@@ -2505,6 +2778,11 @@ Past days and today stay as they are.`)) return;
   },
   openWeek(el) { openWeek(el.dataset.v); },
   histAll() { ui.histAll = !ui.histAll; render(); },
+  newBudget() { openBudgetForm(null); },
+  editBudget(el) { openBudgetForm(el.dataset.id); },
+  openBudget(el) { openBudget(el.dataset.id); },
+  delBudget() { delBudget(); },
+  budgetsAll() { ui.budgetsAll = !ui.budgetsAll; render(); },
   walletShift(el) { ui.walletWs = U.addDays(walletWeek(), 7 * el.dataset.v); render(); },
   walletNow() { ui.walletWs = null; render(); },
   addCat() { addCat(); },
@@ -2639,9 +2917,13 @@ document.addEventListener('change', async e => {
     // One setup per trade: picking one clears the others.
     if (el.checked) for (const x of $$('#setupPick input')) if (x !== el) x.checked = false;
   } else if (el.closest('#expForm')) {
+    if (el.name === 'date') renderBudgetPick($('#budgetPickBox').hidden ? undefined : formBudget());
+    else if (el.name === 'budget') budgetPicked();
     expHint();
   } else if (el.closest('#allowForm')) {
     allowHint();
+  } else if (el.closest('#budgetForm')) {
+    budgetHint();
   } else if (el.name === 'lossLimit') {
     const v = U.num(el.value);
     Store.setSettings({ lossLimit: v > 0 ? v : 0 });
@@ -2664,6 +2946,7 @@ document.addEventListener('input', e => {
   else if (e.target.closest('#acctForm')) acctFormType();
   else if (e.target.closest('#expForm')) expHint();
   else if (e.target.closest('#allowForm')) allowHint();
+  else if (e.target.closest('#budgetForm')) budgetHint();
 });
 
 document.addEventListener('submit', e => {
@@ -2719,6 +3002,9 @@ document.addEventListener('submit', e => {
   } else if (e.target.id === 'allowForm') {
     e.preventDefault();
     saveAllow();
+  } else if (e.target.id === 'budgetForm') {
+    e.preventDefault();
+    saveBudget();
   } else if (e.target.id === 'catForm' || e.target.id === 'pairForm' || e.target.id === 'tagForm' || e.target.id === 'settingsForm') {
     e.preventDefault();
   }
@@ -2790,6 +3076,7 @@ Store.on(() => {
   if ($('#tradeDlg').open) { renderHeader(); renderPairPick(formPair()); } else render();
   if ($('#settingsDlg').open) renderSyncInfo();
   if ($('#weekDlg').open) renderWeek(ui.weekOpen);
+  if ($('#budgetViewDlg').open) renderBudget(ui.budgetOpen);
 });
 
 // Redraw when an activity's time passes, so it shows Late without a reload.

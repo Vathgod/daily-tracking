@@ -195,6 +195,11 @@
 .w-head .nav { min-width: 32px; min-height: 32px; padding: 2px; font-size: 20px; }
 .w-head .nav:disabled { opacity: .3; }
 .w-links { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px 16px; }
+.budget .w-head { gap: 10px; }
+.budget .w-head .w-title { justify-items: start; text-align: left; }
+.b-when { flex: none; font-size: 12px; font-weight: 700; padding: 4px 9px; border-radius: 999px; background: var(--surface-2); }
+.budname .emo { flex: none; width: 64px; }
+.budname .emo input { text-align: center; }
 .recap { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; border: 0; text-align: left; font: inherit; font-weight: 600; background: var(--surface-2); color: var(--text); }
 .recap-go { font-size: 22px; line-height: 1; opacity: .6; }
 
