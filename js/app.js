@@ -2158,6 +2158,21 @@ function newsDay(sel) {
   </div>`;
 }
 
+// PnL of the whole Mon–Sun week around a day, even when it runs into the next or last month.
+function weekTotal(date) {
+  const ws = Perf.weekStart(date), we = U.addDays(ws, 6);
+  const wt = tradesIn(ws, we);
+  const p = sumPnl(wt);
+  const days = groupStats(wt, t => t.date);
+  const green = days.filter(d => d.pnl > 0).length, red = days.filter(d => d.pnl < 0).length;
+  const short = d => U.fmtDate(d, { day: 'numeric', month: 'short' });
+  return `<div class="weektotal${wt.length && p ? ' wt-' + U.cls(p) : ''}">
+    <span>Week · ${short(ws)} – ${short(we)}
+      <small>${wt.length ? `${wt.length} trade${wt.length === 1 ? '' : 's'} · ${green} green · ${red} red day${red === 1 ? '' : 's'}` : 'No trades this week'}</small></span>
+    ${wt.length ? `<b class="${U.cls(p)}">${U.money(p)}</b>` : ''}
+  </div>`;
+}
+
 function viewCalendar() {
   const [y, m] = ui.calMonth.split('-').map(Number);
   const first = `${ui.calMonth}-01`;
@@ -2250,6 +2265,7 @@ function viewCalendar() {
     const p = sumPnl(st);
     detail = `<div class="card">
       <h3 class="dayhead"><span>${U.esc(U.dayLabel(sel))}</span>${st.length ? `<span class="${U.cls(p)}">${U.money(p)}</span>` : ''}</h3>
+      ${weekTotal(sel)}
       ${recapLine(sel)}
       ${st.length ? `<div class="tradelist">${st.map(tradeCard).join('')}</div>` : '<p class="muted small">No trades.</p>'}
     </div>`;
