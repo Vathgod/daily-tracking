@@ -26,7 +26,7 @@ const ui = {
   histAll: false,
   weekOpen: null,
   budgetOpen: null,
-  recapOpen: null, // date of the day recap open in its sheet
+  recapOpen: null, // day (or tw- week note) open in the recap sheet
   recapDraft: null, // { date, text, rating, tags, shots } while a recap is written or edited
   recapDay: null, // day shown on the Trades tab's recap card (null = today)
   budgetsAll: false,
@@ -784,6 +784,11 @@ function sessTag(s) {
 // One recap per day (all accounts): what happened in the trading day, as
 // text, day tags, up to 4 images and a 1-5 rating of how well the rules
 // were followed.
+//
+// Week notes are recaps too (no tags), keyed by the week's first day:
+// tw-<Monday> for a trading week, mw-<Sunday> for a money week.
+function isWeekNote(key) { return /^[tm]w-/.test(key); }
+
 function recapOf(date) {
   const r = Store.get('recaps', date);
   return r && !r.deleted ? r : null;
@@ -841,18 +846,20 @@ function saveRecap(date) {
     return y;
   });
   setRecap(date, { text: d.text.trim(), rating: d.rating, tags: d.tags, shots });
+  const week = isWeekNote(date);
   if (!recapOf(date)) {
     redrawRecap();
-    if (had) toast('Recap removed');
-    else toast('Write something, or add a star, tag or image first.');
+    if (had) toast(week ? 'Week note removed' : 'Recap removed');
+    else toast(`Write something, or add a star${week ? '' : ', tag'} or image first.`);
     return;
   }
-  toast('Recap saved 📝');
+  toast(week ? 'Week note saved 📝' : 'Recap saved 📝');
 }
 
 function redrawRecap() {
   render();
   if ($('#recapDlg').open) renderRecapDlg();
+  if ($('#weekDlg').open) renderWeek(ui.weekOpen);
 }
 
 // Redraws `host` without losing the cursor in the recap box or image title
@@ -947,12 +954,12 @@ function removeRecapShot(date, i) {
 
 function recapStars(date, n, ro) {
   if (ro) return `<span class="stars ro" aria-label="${n} of 5">${'★'.repeat(n)}<i>${'★'.repeat(5 - n)}</i></span>`;
-  return `<span class="stars" role="group" aria-label="How well you traded">${[1, 2, 3, 4, 5].map(i =>
+  return `<span class="stars" role="group" aria-label="${date.startsWith('mw-') ? 'How well you kept to your money' : 'How well you traded'}">${[1, 2, 3, 4, 5].map(i =>
     `<button type="button" class="star${i <= n ? ' on' : ''}" data-act="recapStar" data-date="${date}" data-v="${i}" aria-label="${i} star${i === 1 ? '' : 's'}">★</button>`).join('')}</span>`;
 }
 
 function recapTitle(date) {
-  return `📝 ${date === U.today() ? "Today's recap" : 'Day recap'}`;
+  return `📝 ${isWeekNote(date) ? 'Week note' : date === U.today() ? "Today's recap" : 'Day recap'}`;
 }
 
 // The Trades tab card's day: today, unless ‹ stepped back to an earlier one.
@@ -974,16 +981,23 @@ function recapHead(date, stars, nav) {
     </div>${stars ? `<div class="recapstars">${stars}</div>` : ''}`;
 }
 
+const RECAP_HINTS = {
+  day: "How did the day go? e.g. no displacement, didn't check the news…",
+  tw: 'How did the week go? What to keep or fix next week…',
+  mw: 'How did the spending go? What to change next week…',
+};
+
 function recapEditor(date, nav) {
   const d = ui.recapDraft && ui.recapDraft.date === date ? ui.recapDraft : { text: '', rating: 0, tags: [], shots: [] };
   const saved = !!recapOf(date);
+  const week = isWeekNote(date);
   const picked = d.tags.map(Tags.get).filter(Boolean);
   return `<div class="recapedit">
     ${recapHead(date, recapStars(date, d.rating), nav)}
-    <textarea class="recaptext" data-date="${date}" rows="2" maxlength="2000" aria-label="Day recap"
-      placeholder="How did the day go? e.g. no displacement, didn't check the news…">${U.esc(d.text)}</textarea>
+    <textarea class="recaptext" data-date="${date}" rows="2" maxlength="2000" aria-label="${week ? 'Week note' : 'Day recap'}"
+      placeholder="${RECAP_HINTS[week ? date.slice(0, 2) : 'day']}">${U.esc(d.text)}</textarea>
     ${recapShots(date, d.shots, true)}
-    <div class="daytags">${picked.map(t => `<button type="button" class="dtag on" data-act="recapTag" data-date="${date}" data-id="${U.esc(t.id)}" aria-label="Remove ${U.esc(t.name)}">${U.esc(t.name)} <span aria-hidden="true">×</span></button>`).join('')}<button type="button" class="catedit" data-act="pickDayTags" data-date="${date}">🏷 Tags</button>${d.shots.length < MAX_SHOTS
+    <div class="daytags">${week ? '' : `${picked.map(t => `<button type="button" class="dtag on" data-act="recapTag" data-date="${date}" data-id="${U.esc(t.id)}" aria-label="Remove ${U.esc(t.name)}">${U.esc(t.name)} <span aria-hidden="true">×</span></button>`).join('')}<button type="button" class="catedit" data-act="pickDayTags" data-date="${date}">🏷 Tags</button>`}${d.shots.length < MAX_SHOTS
       ? `<button type="button" class="catedit" data-act="addRecapShot" data-date="${date}">📷 Image</button>` : ''}</div>
     <div class="actions">
       ${saved || ui.recapDraft && ui.recapDraft.date === date ? `<button type="button" class="btn ghost" data-act="recapCancel">Cancel</button>` : ''}
@@ -1105,15 +1119,29 @@ function recapLine(date) {
   </button>`;
 }
 
+// The sheet holds a day's recap or a trading week's note.
 function renderRecapDlg() {
   const date = ui.recapOpen;
-  const st = tradesIn(date, date, 'all', 'all');
+  const week = isWeekNote(date);
+  const from = week ? date.slice(3) : date, to = week ? U.addDays(from, 6) : date;
+  const st = tradesIn(from, to, 'all', 'all');
   const p = sumPnl(st);
-  $('#recapTitle').textContent = U.dayLabel(date);
+  const days = groupStats(st, t => t.date);
+  const green = days.filter(d => d.pnl > 0).length, red = days.filter(d => d.pnl < 0).length;
+  $('#recapTitle').textContent = week ? `Week · ${Money.weekLabel(from)}` : U.dayLabel(date);
   keepRecap($('#recapBody'), () => {
-    $('#recapBody').innerHTML = `<p class="muted small">${st.length ? `${st.length} trade${st.length === 1 ? '' : 's'} · <b class="${U.cls(p)}">${U.money(p)}</b>` : 'No trades this day.'}</p>
+    $('#recapBody').innerHTML = `<p class="muted small">${st.length ? `${st.length} trade${st.length === 1 ? '' : 's'}${week
+      ? ` · ${green} green · ${red} red day${red === 1 ? '' : 's'}` : ''} · <b class="${U.cls(p)}">${U.money(p)}</b>` : `No trades this ${week ? 'week' : 'day'}.`}</p>
       ${recapBox(date)}`;
   });
+}
+
+// A week card's mark: 📝 (and 📷 count) once the week has a note, a faint 📝
+// before that.
+function weekNoteMark(key) {
+  const r = recapOf(key);
+  const n = Store.shotsOf(r).length;
+  return `<span class="wn-mark${r ? '' : ' none'}" title="Week note">📝${n ? ` 📷${n > 1 ? ' ' + n : ''}` : ''}</span>`;
 }
 
 function openRecap(date) {
@@ -1836,7 +1864,7 @@ function saveAllow() {
 function renderWeek(ws) {
   const w = Money.week(ws);
   $('#weekTitle').textContent = `👛 ${Money.weekLabel(ws)}`;
-  $('#weekBody').innerHTML = `
+  keepRecap($('#weekBody'), () => { $('#weekBody').innerHTML = `
     <div class="tiles">
       <div class="tile"><span>Week's money</span><b>${w.a ? Money.fmtOrig(w.a) : '–'}</b>${w.a && w.a.cur === 'KHR' ? `<small>= ${Money.fmt(w.got, false)}</small>` : ''}</div>
       <div class="tile"><span>Spent</span><b>${Money.fmt(w.spent, false)}</b><small>${w.list.length} item${w.list.length === 1 ? '' : 's'}</small></div>
@@ -1845,8 +1873,9 @@ function renderWeek(ws) {
     </div>
     ${w.offWeek > 0 ? `<p class="muted small">🌴 Weekend spending ${Money.fmt(w.offWeek, false)} isn't taken from the week's money.</p>` : ''}
     <button type="button" class="btn ghost block" data-act="setAllow" data-v="${ws}">${w.a ? "Edit week's money" : "+ Add week's money"}</button>
+    <div class="card recapcard">${recapBox('mw-' + ws)}</div>
     ${catBreakdown(w.list)}
-    ${w.all.length ? expGroups(w.all) : '<p class="empty">No spending this week.</p>'}`;
+    ${w.all.length ? expGroups(w.all) : '<p class="empty">No spending this week.</p>'}`; });
 }
 
 function openWeek(ws) {
@@ -2280,11 +2309,11 @@ function weekTotal(date) {
   const days = groupStats(wt, t => t.date);
   const green = days.filter(d => d.pnl > 0).length, red = days.filter(d => d.pnl < 0).length;
   const short = d => U.fmtDate(d, { day: 'numeric', month: 'short' });
-  return `<div class="weektotal${wt.length && p ? ' wt-' + U.cls(p) : ''}">
-    <span>Week · ${short(ws)} – ${short(we)}
+  return `<button type="button" class="weektotal${wt.length && p ? ' wt-' + U.cls(p) : ''}" data-act="openRecap" data-v="tw-${ws}">
+    <span>Week · ${short(ws)} – ${short(we)} ${weekNoteMark('tw-' + ws)}
       <small>${wt.length ? `${wt.length} trade${wt.length === 1 ? '' : 's'} · ${green} green · ${red} red day${red === 1 ? '' : 's'}` : 'No trades this week'}</small></span>
     ${wt.length ? `<b class="${U.cls(p)}">${U.money(p)}</b>` : ''}
-  </div>`;
+  </button>`;
 }
 
 // Week's money for the Sun–Sat spending week around a day. Tap to see the whole week.
@@ -2298,7 +2327,7 @@ function moneyWeekTotal(date) {
   const right = w.a ? `<b class="${w.left < 0 ? 'neg' : 'pos'}">${Money.fmt(Math.abs(w.left), false)} ${w.left < 0 ? 'over' : 'left'}</b>`
     : n ? `<b>${Money.fmt(w.spent + w.offWeek, false)}</b>` : '';
   return `<button type="button" class="weektotal big${w.a ? (w.left < 0 ? ' wt-neg' : ' wt-pos') : ''}" data-act="openWeek" data-v="${w.ws}">
-    <span>👛 Week · ${short(w.ws)} – ${short(U.addDays(w.ws, 6))}</span>
+    <span>👛 Week · ${short(w.ws)} – ${short(U.addDays(w.ws, 6))} ${weekNoteMark('mw-' + w.ws)}</span>
     ${right}
     <small>${sub}</small>
   </button>`;
@@ -3187,7 +3216,7 @@ Past days and today stay as they are.`)) return;
     redrawRecap();
   },
   recapEdit(el) {
-    const host = el.closest('#recapBody') || $('#view');
+    const host = el.closest('#recapBody, #weekBody') || $('#view');
     dropRecapDraft();
     recapDraft(el.dataset.date);
     redrawRecap();
