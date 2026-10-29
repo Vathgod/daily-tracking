@@ -800,7 +800,7 @@ function setRecap(date, patch) {
     if (old) Store.remove('recaps', date);
     return;
   }
-  const ids = x => String(Store.shotsOf(x).map(y => y.id));
+  const ids = x => String(Store.shotsOf(x).map(y => y.id + ':' + (y.tf || '')));
   if (old && (old.text || '') === r.text && (old.rating || 0) === r.rating && String(old.tags || []) === String(r.tags) && ids(old) === ids(r)) return;
   Store.upsert('recaps', r);
   for (const x of Store.shotsOf(old)) if (!Store.shotsOf(r).some(y => y.id === x.id)) Store.deleteShot(x);
@@ -835,7 +835,12 @@ function saveRecap(date) {
   const d = recapDraft(date);
   const had = !!recapOf(date);
   ui.recapDraft = null;
-  setRecap(date, { text: d.text.trim(), rating: d.rating, tags: d.tags, shots: d.shots });
+  const shots = d.shots.map(x => {
+    const y = { ...x, tf: (x.tf || '').trim() };
+    if (!y.tf) delete y.tf;
+    return y;
+  });
+  setRecap(date, { text: d.text.trim(), rating: d.rating, tags: d.tags, shots });
   if (!recapOf(date)) {
     redrawRecap();
     if (had) toast('Recap removed');
@@ -850,29 +855,35 @@ function redrawRecap() {
   if ($('#recapDlg').open) renderRecapDlg();
 }
 
-// Redraws `host` without losing the cursor in the recap box being typed in.
+// Redraws `host` without losing the cursor in the recap box or image title
+// being typed in.
 function keepRecap(host, draw) {
   const el = document.activeElement;
-  const was = el && el.classList.contains('recaptext') && host.contains(el)
-    ? { date: el.dataset.date, a: el.selectionStart, b: el.selectionEnd } : null;
+  const key = !el || !host.contains(el) ? ''
+    : el.classList.contains('recaptext') ? `.recaptext[data-date="${el.dataset.date}"]`
+    : el.dataset.recapshot ? `[data-recapshot="${el.dataset.recapshot}"][data-date="${el.dataset.date}"]` : '';
+  const sel = key && [el.selectionStart, el.selectionEnd];
   draw();
-  for (const box of host.querySelectorAll('.recaptext')) {
-    fitBox(box);
-    if (was && box.dataset.date === was.date) { box.focus(); box.setSelectionRange(was.a, was.b); }
-  }
+  for (const box of host.querySelectorAll('.recaptext')) fitBox(box);
+  const back = key && host.querySelector(key);
+  if (back) { back.focus(); back.setSelectionRange(...sel); }
   loadRecapShots(host);
 }
 
 // ---------- Recap images ----------
 
-// Thumbnails of a recap's images; `edit` adds an × to each.
+// Thumbnails of a recap's images with their titles (kept in `tf`, like a
+// trade screenshot's label); `edit` adds an × and a title box to each. An
+// untitled image just shows its number as a hint, so it renumbers itself.
 function recapShots(date, shots, edit) {
   if (!shots.length) return '';
   return `<div class="shots recapshots">${shots.map((x, i) => {
     const url = Store.shotUrlNow(x);
     return `<div class="shot">
       <div class="thumb${url ? '' : ' loading'}" data-sid="${U.esc(x.id)}" data-i="${i}">${url ? recapImg(url, i) : '…'}</div>
-      ${edit ? `<button type="button" class="x" data-act="removeRecapShot" data-date="${date}" data-i="${i}" aria-label="Remove image">×</button>` : ''}
+      ${edit ? `<button type="button" class="x" data-act="removeRecapShot" data-date="${date}" data-i="${i}" aria-label="Remove image">×</button>
+      <input class="tf" data-recapshot="${i}" data-date="${date}" value="${U.esc(x.tf || '')}" maxlength="20" placeholder="Img ${i + 1}" aria-label="Image title">`
+      : x.tf ? `<span class="cap">${U.esc(x.tf)}</span>` : ''}
     </div>`;
   }).join('')}</div>`;
 }
@@ -1348,7 +1359,11 @@ function showViewer(slides, total, start) {
 function viewRecapShots(el) {
   const box = el.closest('.recapshots');
   const imgs = [...box.querySelectorAll('img[data-i]')];
-  showViewer(imgs.map(img => ({ src: img.src, alt: 'Recap image', label: '', i: +img.dataset.i })), box.children.length, el.dataset.i);
+  showViewer(imgs.map(img => {
+    const t = img.closest('.shot').querySelector('.tf, .cap');
+    const label = t ? (t.value ?? t.textContent).trim() : '';
+    return { src: img.src, alt: label || 'Recap image', label, i: +img.dataset.i };
+  }), box.children.length, el.dataset.i);
 }
 
 function saveTrade() {
@@ -3374,6 +3389,11 @@ document.addEventListener('input', e => {
   if (e.target.name === 'pnl') form.pnlTouched = e.target.value.trim() !== '';
   if (e.target.dataset.shot) {
     const x = form.shots[e.target.dataset.shot];
+    if (x) x.tf = e.target.value;
+    return;
+  }
+  if (e.target.dataset.recapshot) {
+    const x = recapDraft(e.target.dataset.date).shots[e.target.dataset.recapshot];
     if (x) x.tf = e.target.value;
     return;
   }

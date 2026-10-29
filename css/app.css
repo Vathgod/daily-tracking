@@ -447,6 +447,7 @@ dialog::backdrop { background: rgba(0, 0, 0, .55); }
   font: inherit; font-size: 16px; font-weight: 600; text-align: center; padding: 4px 2px;
 }
 .shot .tf:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.shot .cap { font-size: 12px; font-weight: 600; color: var(--muted); text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .shot.add {
   aspect-ratio: 1; border: 2px dashed var(--muted); border-radius: 12px; opacity: .7;
   place-content: center; justify-items: center; color: var(--muted); font-size: 12px;
