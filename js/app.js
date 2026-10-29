@@ -1182,7 +1182,7 @@ function viewTrades() {
 
 const form = { id: null, shots: [], pnlTouched: false };
 const MAX_SHOTS = 4;
-const SHOT_TFS = ['1m', '3m', '5m', '15m'];
+const SHOT_TF = '1m'; // label every new photo starts with
 
 function pointValue(pair) { return Pairs.value(pair); }
 
@@ -1283,11 +1283,6 @@ function updatePreview() {
     cell('Session', c.session);
 }
 
-// Next unused default label, so the 1st photo is 1m, the 2nd 3m, and so on.
-function nextTf() {
-  return SHOT_TFS.find(tf => !form.shots.some(x => x.tf === tf)) || '';
-}
-
 let shotRender = 0;
 
 async function renderShotPreview() {
@@ -1322,7 +1317,7 @@ async function addShots(files) {
   if (files.length > room) toast(`Only ${MAX_SHOTS} screenshots per trade.`);
   for (const file of files.slice(0, room)) {
     try {
-      form.shots.push({ ...await Store.saveShot(file), tf: nextTf() });
+      form.shots.push({ ...await Store.saveShot(file), tf: SHOT_TF });
     } catch (err) {
       toast(err.message);
     }
