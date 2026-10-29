@@ -259,29 +259,32 @@ const Store = (() => {
     return { sha: (await r.json()).content.sha };
   }
 
+  // Trades and day recaps keep their screenshots in `shots`.
   async function uploadPendingShots(s) {
-    for (const t of Object.values(s.trades)) {
-      if (t.deleted) continue;
-      const shots = shotsOf(t);
-      if (!shots.some(x => x.store === 'local')) continue;
-      const done = [];
-      let changed = false;
-      for (const x of shots) {
-        const blob = x.store === 'local' && await idb.get(x.id);
-        if (!blob) { done.push(x); continue; }
-        const path = `shots/${x.id}.jpg`;
-        const r = await api('/contents/' + path, {
-          method: 'PUT',
-          body: JSON.stringify({ message: 'Add screenshot', content: await blobToB64(blob) }),
-        });
-        if (!r.ok && r.status !== 422) throw await apiError(r); // 422 = already uploaded
-        done.push({ id: x.id, store: 'gh', path, tf: x.tf });
-        changed = true;
+    for (const kind of ['trades', 'recaps']) {
+      for (const t of Object.values(s[kind])) {
+        if (t.deleted) continue;
+        const shots = shotsOf(t);
+        if (!shots.some(x => x.store === 'local')) continue;
+        const done = [];
+        let changed = false;
+        for (const x of shots) {
+          const blob = x.store === 'local' && await idb.get(x.id);
+          if (!blob) { done.push(x); continue; }
+          const path = `shots/${x.id}.jpg`;
+          const r = await api('/contents/' + path, {
+            method: 'PUT',
+            body: JSON.stringify({ message: 'Add screenshot', content: await blobToB64(blob) }),
+          });
+          if (!r.ok && r.status !== 422) throw await apiError(r); // 422 = already uploaded
+          done.push({ id: x.id, store: 'gh', path, tf: x.tf });
+          changed = true;
+        }
+        if (!changed) continue;
+        const next = { ...t, shots: done, updatedAt: Date.now() };
+        delete next.shot;
+        s[kind][t.id] = next;
       }
-      if (!changed) continue;
-      const next = { ...t, shots: done, updatedAt: Date.now() };
-      delete next.shot;
-      s.trades[t.id] = next;
     }
   }
 
@@ -355,7 +358,8 @@ const Store = (() => {
 
   // ---------- Screenshots ----------
 
-  // A trade holds up to 4 screenshots in `shots`; older trades had one `shot`.
+  // A trade or day recap holds up to 4 screenshots in `shots`; older trades
+  // had one `shot`.
   function shotsOf(t) {
     if (!t) return [];
     if (Array.isArray(t.shots)) return t.shots;
@@ -389,6 +393,11 @@ const Store = (() => {
     await idb.set(id, blob);
     shotUrls.set(id, URL.createObjectURL(blob));
     return { id, store: 'local' };
+  }
+
+  // The image's URL if it's already loaded, so a redraw doesn't flicker.
+  function shotUrlNow(shot) {
+    return shotUrls.get(shot.id) || '';
   }
 
   async function shotUrl(shot) {
@@ -439,7 +448,7 @@ const Store = (() => {
 
   return {
     load, list, upsert, addQuiet, remove, setSettings, syncNow, testConnection, setConfig,
-    saveShot, shotUrl, deleteShot, shotsOf, exportJSON, importJSON,
+    saveShot, shotUrl, shotUrlNow, deleteShot, shotsOf, exportJSON, importJSON,
     get: (kind, id) => state[kind][id],
     settings: () => state.settings,
     config: () => ({ ...cfg }),

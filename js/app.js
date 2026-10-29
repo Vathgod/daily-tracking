@@ -27,7 +27,7 @@ const ui = {
   weekOpen: null,
   budgetOpen: null,
   recapOpen: null, // date of the day recap open in its sheet
-  recapDraft: null, // { date, text, rating, tags } while a recap is written or edited
+  recapDraft: null, // { date, text, rating, tags, shots } while a recap is written or edited
   recapDay: null, // day shown on the Trades tab's recap card (null = today)
   budgetsAll: false,
   walletWs: null, // Sunday of the week shown on the wallet card (null = this week)
@@ -782,7 +782,8 @@ function sessTag(s) {
 // ---------- Day recap ----------
 
 // One recap per day (all accounts): what happened in the trading day, as
-// text, day tags and a 1-5 rating of how well the rules were followed.
+// text, day tags, up to 4 images and a 1-5 rating of how well the rules
+// were followed.
 function recapOf(date) {
   const r = Store.get('recaps', date);
   return r && !r.deleted ? r : null;
@@ -794,22 +795,35 @@ function setRecap(date, patch) {
   r.text = r.text || '';
   r.rating = r.rating || 0;
   r.tags = (r.tags || []).filter(id => Tags.get(id));
-  if (!r.text && !r.tags.length && !r.rating) {
+  if (!(r.shots || []).length) delete r.shots;
+  if (!r.text && !r.tags.length && !r.rating && !r.shots) {
     if (old) Store.remove('recaps', date);
     return;
   }
-  if (old && (old.text || '') === r.text && (old.rating || 0) === r.rating && String(old.tags || []) === String(r.tags)) return;
+  const ids = x => String(Store.shotsOf(x).map(y => y.id));
+  if (old && (old.text || '') === r.text && (old.rating || 0) === r.rating && String(old.tags || []) === String(r.tags) && ids(old) === ids(r)) return;
   Store.upsert('recaps', r);
+  for (const x of Store.shotsOf(old)) if (!Store.shotsOf(r).some(y => y.id === x.id)) Store.deleteShot(x);
 }
 
 // A saved recap only changes on Save. While it's being written or edited, the
-// text, stars and tags live in this draft (one day at a time).
+// text, stars, tags and images live in this draft (one day at a time).
 function recapDraft(date) {
   if (!ui.recapDraft || ui.recapDraft.date !== date) {
+    dropRecapDraft();
     const r = recapOf(date) || {};
-    ui.recapDraft = { date, text: r.text || '', rating: r.rating || 0, tags: [...(r.tags || [])] };
+    ui.recapDraft = { date, text: r.text || '', rating: r.rating || 0, tags: [...(r.tags || [])], shots: Store.shotsOf(r).map(x => ({ ...x })) };
   }
   return ui.recapDraft;
+}
+
+// Throws the draft away, with any image added to it but never saved.
+function dropRecapDraft() {
+  const d = ui.recapDraft;
+  ui.recapDraft = null;
+  if (!d) return;
+  const saved = Store.shotsOf(recapOf(d.date));
+  for (const x of d.shots) if (!saved.some(y => y.id === x.id)) Store.deleteShot(x);
 }
 
 // The box is open while there's a draft for the day, or nothing saved yet.
@@ -821,11 +835,11 @@ function saveRecap(date) {
   const d = recapDraft(date);
   const had = !!recapOf(date);
   ui.recapDraft = null;
-  setRecap(date, { text: d.text.trim(), rating: d.rating, tags: d.tags });
+  setRecap(date, { text: d.text.trim(), rating: d.rating, tags: d.tags, shots: d.shots });
   if (!recapOf(date)) {
     redrawRecap();
     if (had) toast('Recap removed');
-    else toast('Write something, a star or a tag first.');
+    else toast('Write something, or add a star, tag or image first.');
     return;
   }
   toast('Recap saved 📝');
@@ -846,6 +860,78 @@ function keepRecap(host, draw) {
     fitBox(box);
     if (was && box.dataset.date === was.date) { box.focus(); box.setSelectionRange(was.a, was.b); }
   }
+  loadRecapShots(host);
+}
+
+// ---------- Recap images ----------
+
+// Thumbnails of a recap's images; `edit` adds an × to each.
+function recapShots(date, shots, edit) {
+  if (!shots.length) return '';
+  return `<div class="shots recapshots">${shots.map((x, i) => {
+    const url = Store.shotUrlNow(x);
+    return `<div class="shot">
+      <div class="thumb${url ? '' : ' loading'}" data-sid="${U.esc(x.id)}" data-i="${i}">${url ? recapImg(url, i) : '…'}</div>
+      ${edit ? `<button type="button" class="x" data-act="removeRecapShot" data-date="${date}" data-i="${i}" aria-label="Remove image">×</button>` : ''}
+    </div>`;
+  }).join('')}</div>`;
+}
+
+function recapImg(url, i) {
+  return `<img src="${url}" alt="Recap image" data-act="viewRecapShot" data-i="${i}">`;
+}
+
+// Fills in thumbnails whose image wasn't loaded yet (from this device, or
+// from GitHub on another one).
+function loadRecapShots(host) {
+  for (const cell of host.querySelectorAll('.recapshots .thumb.loading')) {
+    const id = cell.dataset.sid;
+    const shot = [...(ui.recapDraft ? ui.recapDraft.shots : []), ...Store.list('recaps').flatMap(Store.shotsOf)].find(x => x.id === id);
+    if (!shot) continue;
+    Store.shotUrl(shot).catch(() => '').then(url => {
+      if (!cell.isConnected) return;
+      cell.innerHTML = url ? recapImg(url, cell.dataset.i) : 'Not on this device yet';
+      cell.classList.toggle('loading', !url);
+    });
+  }
+}
+
+// The file input is made on the spot: one in the page could be redrawn away
+// while the picker is open.
+function pickRecapShots(date) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.multiple = true;
+  input.addEventListener('change', () => addRecapShots(date, [...input.files]));
+  input.click();
+}
+
+async function addRecapShots(date, files) {
+  const d = recapDraft(date);
+  const room = MAX_SHOTS - d.shots.length;
+  if (files.length > room) toast(`Only ${MAX_SHOTS} images per day.`);
+  for (const file of files.slice(0, room)) {
+    let shot;
+    try {
+      shot = await Store.saveShot(file);
+    } catch (err) {
+      toast(err.message);
+      continue;
+    }
+    // The draft was cancelled or saved while the image was being read.
+    if (ui.recapDraft !== d) { Store.deleteShot(shot); return; }
+    d.shots.push(shot);
+    redrawRecap();
+  }
+}
+
+function removeRecapShot(date, i) {
+  const d = recapDraft(date);
+  const [x] = d.shots.splice(i, 1);
+  // Not saved yet, so nothing else needs it; a saved one goes on Save.
+  if (x && !Store.shotsOf(recapOf(date)).some(y => y.id === x.id)) Store.deleteShot(x);
+  redrawRecap();
 }
 
 function recapStars(date, n, ro) {
@@ -878,14 +964,16 @@ function recapHead(date, stars, nav) {
 }
 
 function recapEditor(date, nav) {
-  const d = ui.recapDraft && ui.recapDraft.date === date ? ui.recapDraft : { text: '', rating: 0, tags: [] };
+  const d = ui.recapDraft && ui.recapDraft.date === date ? ui.recapDraft : { text: '', rating: 0, tags: [], shots: [] };
   const saved = !!recapOf(date);
   const picked = d.tags.map(Tags.get).filter(Boolean);
   return `<div class="recapedit">
     ${recapHead(date, recapStars(date, d.rating), nav)}
     <textarea class="recaptext" data-date="${date}" rows="2" maxlength="2000" aria-label="Day recap"
       placeholder="How did the day go? e.g. no displacement, didn't check the news…">${U.esc(d.text)}</textarea>
-    <div class="daytags">${picked.map(t => `<button type="button" class="dtag on" data-act="recapTag" data-date="${date}" data-id="${U.esc(t.id)}" aria-label="Remove ${U.esc(t.name)}">${U.esc(t.name)} <span aria-hidden="true">×</span></button>`).join('')}<button type="button" class="catedit" data-act="pickDayTags" data-date="${date}">🏷 Tags</button></div>
+    ${recapShots(date, d.shots, true)}
+    <div class="daytags">${picked.map(t => `<button type="button" class="dtag on" data-act="recapTag" data-date="${date}" data-id="${U.esc(t.id)}" aria-label="Remove ${U.esc(t.name)}">${U.esc(t.name)} <span aria-hidden="true">×</span></button>`).join('')}<button type="button" class="catedit" data-act="pickDayTags" data-date="${date}">🏷 Tags</button>${d.shots.length < MAX_SHOTS
+      ? `<button type="button" class="catedit" data-act="addRecapShot" data-date="${date}">📷 Image</button>` : ''}</div>
     <div class="actions">
       ${saved || ui.recapDraft && ui.recapDraft.date === date ? `<button type="button" class="btn ghost" data-act="recapCancel">Cancel</button>` : ''}
       <button type="button" class="btn primary grow" data-act="recapSave" data-date="${date}">Save</button>
@@ -900,6 +988,7 @@ function recapView(date, nav) {
   return `<div class="recapedit">
     ${recapHead(date, r.rating ? recapStars(date, r.rating, true) : '', nav)}
     ${r.text ? `<p class="recapsaved">${U.esc(r.text)}</p>` : ''}
+    ${recapShots(date, Store.shotsOf(r))}
     ${tags.length ? `<div class="rl-top">${tags.map(n => `<span class="rl-tag">${U.esc(n)}</span>`).join('')}</div>` : ''}
     <button type="button" class="btn ghost block" data-act="recapEdit" data-date="${date}">✏️ Edit</button>
   </div>`;
@@ -992,13 +1081,15 @@ function delDayTag(id) {
   renderDayTags();
 }
 
-// A day's recap in a list: stars, tags and the start of the text; tap to edit.
+// A day's recap in a list: stars, image count, tags and the start of the
+// text; tap to edit.
 function recapLine(date) {
   const r = recapOf(date);
   if (!r) return '';
   const tags = (r.tags || []).map(Tags.name).filter(Boolean);
+  const n = Store.shotsOf(r).length;
   return `<button type="button" class="recapline" data-act="openRecap" data-v="${date}">
-    <span class="rl-top">📝${r.rating ? recapStars(date, r.rating, true) : ''}${tags.map(n => `<span class="rl-tag">${U.esc(n)}</span>`).join('')}</span>
+    <span class="rl-top">📝${r.rating ? recapStars(date, r.rating, true) : ''}${n ? `<span class="rl-shots">📷${n > 1 ? ' ' + n : ''}</span>` : ''}${tags.map(n => `<span class="rl-tag">${U.esc(n)}</span>`).join('')}</span>
     ${r.text ? `<span class="rl-text">${U.esc(r.text)}</span>` : ''}
   </button>`;
 }
@@ -1241,15 +1332,28 @@ async function addShots(files) {
 
 function viewShots(start) {
   const imgs = $$('#shotBox img[data-i]');
-  const strip = $('#shotStrip');
-  strip.innerHTML = imgs.map(img => {
+  showViewer(imgs.map(img => {
     const x = form.shots[img.dataset.i];
-    const n = imgs.length > 1 ? `<span>${+img.dataset.i + 1} / ${form.shots.length}</span>` : '';
-    return `<figure class="slide"><img src="${img.src}" alt="${U.esc(x.tf || 'Chart')} screenshot"><figcaption>${U.esc(x.tf || '')}${n}</figcaption></figure>`;
+    return { src: img.src, alt: `${x.tf || 'Chart'} screenshot`, label: x.tf || '', i: +img.dataset.i };
+  }), form.shots.length, start);
+}
+
+// Full-screen images, swiped sideways, opened at image `start`.
+function showViewer(slides, total, start) {
+  const strip = $('#shotStrip');
+  strip.innerHTML = slides.map(s => {
+    const n = slides.length > 1 ? `<span>${s.i + 1} / ${total}</span>` : '';
+    return `<figure class="slide"><img src="${s.src}" alt="${U.esc(s.alt)}"><figcaption>${U.esc(s.label)}${n}</figcaption></figure>`;
   }).join('');
   $('#shotDlg').showModal();
-  const idx = imgs.findIndex(img => img.dataset.i === String(start));
+  const idx = slides.findIndex(s => s.i === +start);
   strip.scrollLeft = strip.clientWidth * Math.max(0, idx);
+}
+
+function viewRecapShots(el) {
+  const box = el.closest('.recapshots');
+  const imgs = [...box.querySelectorAll('img[data-i]')];
+  showViewer(imgs.map(img => ({ src: img.src, alt: 'Recap image', label: '', i: +img.dataset.i })), box.children.length, el.dataset.i);
 }
 
 function saveTrade() {
@@ -3074,7 +3178,7 @@ Past days and today stay as they are.`)) return;
   },
   recapEdit(el) {
     const host = el.closest('#recapBody') || $('#view');
-    ui.recapDraft = null;
+    dropRecapDraft();
     recapDraft(el.dataset.date);
     redrawRecap();
     const box = host.querySelector(`.recaptext[data-date="${el.dataset.date}"]`);
@@ -3091,7 +3195,10 @@ Past days and today stay as they are.`)) return;
     ui.recapDay = d < U.today() ? d : null;
     render();
   },
-  recapCancel() { ui.recapDraft = null; redrawRecap(); },
+  recapCancel() { dropRecapDraft(); redrawRecap(); },
+  addRecapShot(el) { pickRecapShots(el.dataset.date); },
+  removeRecapShot(el) { removeRecapShot(el.dataset.date, +el.dataset.i); },
+  viewRecapShot(el) { viewRecapShots(el); },
   addTag(el) { addTag(el.dataset.v); },
   hideTag(el) { setTagHidden(el.dataset.id, true); },
   showTag(el) { setTagHidden(el.dataset.id, false); },
