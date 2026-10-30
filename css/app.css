@@ -298,7 +298,7 @@ body[data-tab="plan"] .toast { bottom: calc(var(--tabbar-h, 64px) + 72px); }
 .dailyacts { display: flex; gap: 6px; flex-shrink: 0; }
 
 /* ---------- Notes ---------- */
-.planswitch { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; background: var(--surface-2); padding: 4px; border-radius: 12px; }
+.planswitch { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; background: var(--surface-2); padding: 4px; border-radius: 12px; }
 .planswitch button {
   border: 0; background: none; padding: 9px 4px; border-radius: 9px; font-weight: 700; font-size: 14px; color: var(--muted);
   display: flex; align-items: center; justify-content: center; gap: 6px;

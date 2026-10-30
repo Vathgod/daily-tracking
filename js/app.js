@@ -37,11 +37,14 @@ const ui = {
   missedOpen: false,
   manageOpen: false,
   editing: null, // id of the activity or note being edited
-  planMode: lsGet('dt.planMode', 'plan'), // 'plan' or 'notes'
+  planMode: lsGet('dt.planMode', 'plan'), // 'plan', 'schedule' or 'notes'
   noteDue: '', // deadline picked for the note being typed
   editDue: null, // deadline in the note edit box (null = not changed yet)
   taskTime: '', // time picked for the activity being typed
+  taskEnd: '', // end time picked for the activity being typed
   editTime: null, // time in the activity edit box (null = not changed yet)
+  editEnd: null, // end time in the activity edit box (null = not changed yet)
+  schedOpen: null, // id of the activity open in the Schedule sheet
   notePick: null, // id of the note whose "add to plan" day picker is open
 };
 
@@ -84,18 +87,37 @@ function routines() {
 
 // A routine runs every day, or Mon–Fri only when days is 'weekdays'.
 function isWeekend(date) { return U.weekdayMon(date) >= 5; }
-function routineOn(r, date) { return date >= r.start && !(r.days === 'weekdays' && isWeekend(date)); }
+function routineOn(r, date) { return date >= routineStart(r) && !(r.days === 'weekdays' && isWeekend(date)); }
+
+// Daily activities added on a weekend used to be saved as starting the next
+// Monday. Switched to every day, those really start the day they were added.
+function routineStart(r) {
+  if (r.days === 'weekdays' || U.weekdayMon(r.start) !== 0) return r.start;
+  const p = U.parts(new Date(r.createdAt), TZ);
+  const made = `${p.year}-${p.month}-${p.day}`;
+  return isWeekend(made) && made < r.start && U.daysBetween(made, r.start) <= 2 ? made : r.start;
+}
+
+// Days that get their copies: today, the plan day if it's later, and with the
+// Schedule open, the rest of this week so the whole grid shows them.
+function routineDays() {
+  const today = U.today();
+  const dates = new Set([today]);
+  if (ui.planDate > today) dates.add(ui.planDate);
+  if (ui.tab === 'plan' && ui.planMode === 'schedule') {
+    for (let i = 1; i <= 6 - U.weekdayMon(today); i++) dates.add(U.addDays(today, i));
+  }
+  return [...dates];
+}
 
 function fillRoutines() {
-  const today = U.today();
-  const dates = [today];
-  if (ui.planDate > today) dates.push(ui.planDate);
+  const dates = routineDays();
   const add = [];
   for (const r of routines()) {
     for (const d of dates) {
       const id = routineTaskId(r.id, d);
       if (!routineOn(r, d) || Store.get('tasks', id)) continue;
-      add.push({ id, text: r.text, time: r.time || '', date: d, done: false, routine: r.id, createdAt: r.createdAt, updatedAt: 1 });
+      add.push({ id, text: r.text, time: r.time || '', end: r.end || '', date: d, done: false, routine: r.id, createdAt: r.createdAt, updatedAt: 1 });
     }
   }
   if (add.length) Store.addQuiet('tasks', add);
@@ -126,17 +148,19 @@ function toast(msg) {
 function taskRow(t, today, { showDate = false, tag = false } = {}) {
   if (ui.editing === t.id) {
     const time = ui.editTime ?? t.time ?? '';
+    const end = ui.editEnd ?? t.end ?? '';
     return `<li class="task editing"><form class="editrow wrapedit" data-id="${t.id}" autocomplete="off">
       <textarea id="editInput" class="growbox" rows="1" maxlength="1000" enterkeyhint="done" aria-label="Activity">${U.esc(t.text)}</textarea>
       <label class="duefield"><span>🕐 Time</span><input type="time" id="editTime" value="${time}" aria-label="Time"></label>
-      ${time ? '<button type="button" class="mini" data-act="clearEditTime">No time</button>' : ''}
+      ${time ? `<label class="duefield"><span>🏁 Until</span><input type="time" id="editEnd" value="${end}" aria-label="End time"></label>
+      <button type="button" class="mini" data-act="clearEditTime">No time</button>` : ''}
       <span class="editbtns"><button type="submit" class="mini save">Save</button>
       <button type="button" class="mini" data-act="cancelEdit">Cancel</button></span>
     </form></li>`;
   }
   const missed = isMissed(t, today);
   const late = isLate(t, today);
-  const time = t.time ? `<span class="ttime${late ? ' late' : ''}">${t.time}${late ? ' · Late' : ''}</span>` : '';
+  const time = t.time ? `<span class="ttime${late ? ' late' : ''}">${t.time}${t.end ? '–' + t.end : ''}${late ? ' · Late' : ''}</span>` : '';
   let tail = '';
   if (missed && t.movedTo) {
     tail = `<span class="badge muted">Moved → ${U.esc(U.fmtDate(t.movedTo, { day: 'numeric', month: 'short' }))}</span>`;
@@ -216,6 +240,7 @@ function planSwitch() {
   const hot = notes.some(n => isHot(n, today));
   return `<div class="planswitch" role="tablist">
     <button type="button" role="tab" class="${ui.planMode === 'plan' ? 'on' : ''}" aria-selected="${ui.planMode === 'plan'}" data-act="planMode" data-v="plan">☑ Plan</button>
+    <button type="button" role="tab" class="${ui.planMode === 'schedule' ? 'on' : ''}" aria-selected="${ui.planMode === 'schedule'}" data-act="planMode" data-v="schedule">🕐 Schedule</button>
     <button type="button" role="tab" class="${ui.planMode === 'notes' ? 'on' : ''}" aria-selected="${ui.planMode === 'notes'}" data-act="planMode" data-v="notes">📌 Notes${notes.length ? ` <span class="nbadge${hot ? ' hot' : ''}">${notes.length}</span>` : ''}</button>
   </div>`;
 }
@@ -258,8 +283,131 @@ function planNote(id, date) {
     : `Added to the plan for ${U.fmtDate(date, { weekday: 'short', day: 'numeric', month: 'short' })}`);
 }
 
+// ---------- Schedule ----------
+// This week, Monday to Sunday, as a timetable of the activities set in Plan.
+// An activity with no end time shows as 1 hour.
+
+const SCHED_COLORS = 8;
+const SCHED_MIN = 25; // shortest block in minutes, so its name still fits
+const SCHED_NOW_GAP = 0.45; // height of the Now line's own row, in hours
+
+function hmMinutes(hm) { return +hm.slice(0, 2) * 60 + +hm.slice(3, 5); }
+
+// Start and end in minutes. An end before the start runs past midnight, so the block stops at 24:00.
+function schedSpan(t) {
+  const from = hmMinutes(t.time);
+  const end = t.end ? hmMinutes(t.end) : from + 60;
+  return { from, to: Math.min(24 * 60, end > from ? end : 24 * 60) };
+}
+
+// The same name always gets the same color.
+function schedColor(text) {
+  let h = 0;
+  for (const c of text.trim().toLowerCase()) h = (h * 31 + c.codePointAt(0)) >>> 0;
+  return h % SCHED_COLORS;
+}
+
+// Activities at the same time share the column side by side.
+function schedLanes(tasks) {
+  const items = tasks.map(t => {
+    const { from, to } = schedSpan(t);
+    return { t, from, to, shown: Math.max(to, from + SCHED_MIN), lane: 0, lanes: 1 };
+  });
+  let group = [], groupEnd = -1;
+  const close = () => { const n = Math.max(...group.map(x => x.lane)) + 1; group.forEach(x => { x.lanes = n; }); group = []; };
+  for (const it of items) {
+    if (group.length && it.from >= groupEnd) close();
+    const taken = group.filter(x => x.shown > it.from).map(x => x.lane);
+    while (taken.includes(it.lane)) it.lane++;
+    group.push(it);
+    groupEnd = Math.max(groupEnd, it.shown);
+  }
+  if (group.length) close();
+  return items;
+}
+
+function schedClass(t, today) {
+  const state = t.done ? ' done' : t.movedTo ? ' moved' : isMissed(t, today) ? ' missed' : isLate(t, today) ? ' late' : '';
+  return `wk-b wc${schedColor(t.text)}${state}`;
+}
+
+function schedBlock(it, today, y) {
+  const { t, from, to, shown, lane, lanes } = it;
+  const w = 100 / lanes;
+  const label = `${t.text}, ${U.fmtDate(t.date, { weekday: 'short' })} ${t.time}${t.end ? ' to ' + t.end : ''}`;
+  return `<button type="button" class="${schedClass(t, today)}${to - from < 40 || lanes > 1 ? ' short' : ''}" data-act="schedOpen" data-id="${t.id}" aria-label="${U.esc(label)}"
+    style="top:calc(var(--hour) * ${y(Math.min(from, 24 * 60 - SCHED_MIN)).toFixed(3)});height:calc(var(--hour) * ${((shown - from) / 60).toFixed(3)});left:calc(${(lane * w).toFixed(2)}% + 1px);width:calc(${w.toFixed(2)}% - 2px)">
+    <small>${t.time}</small><b>${U.esc(t.text)}</b></button>`;
+}
+
+// The Now label sits on top of an hour's label when the time is close to it.
+function nowCovers(h, nowMin) { const d = nowMin - h * 60; return d > -10 && d < 18; }
+
+function viewSchedule() {
+  const today = U.today();
+  const ws = Perf.weekStart(today);
+  const days = Array.from({ length: 7 }, (_, i) => U.addDays(ws, i));
+  const week = days.map(d => tasksOn(d));
+  const timed = week.map(list => list.filter(t => t.time));
+  const nowMin = hmMinutes(nowHM());
+  const nowH = Math.floor(nowMin / 60);
+  // Only the hours with an activity on some day this week, so there's less to scroll.
+  const used = new Set();
+  for (const s of timed.flat().map(schedSpan)) {
+    const end = Math.min(24 * 60, Math.max(s.to, s.from + SCHED_MIN));
+    for (let h = Math.floor(s.from / 60); h * 60 < end; h++) used.add(h);
+  }
+  const hours = [...used].sort((a, b) => a - b);
+  // When this hour is hidden, the Now line gets a thin row of its own in the right place.
+  const gapAt = used.has(nowH) ? -1 : hours.filter(h => h < nowH).length;
+  const rowTop = i => i + (gapAt >= 0 && i >= gapAt ? SCHED_NOW_GAP : 0);
+  const y = m => rowTop(hours.indexOf(Math.floor(m / 60))) + (m % 60) / 60;
+  const nowTop = gapAt >= 0 ? gapAt + SCHED_NOW_GAP / 2 : y(nowMin);
+  const hasUntimed = week.some(list => list.some(t => !t.time));
+
+  return `<section class="view">
+    ${planSwitch()}
+    <div class="sechead"><h3 class="sectitle">🕐 This week</h3><span class="muted small">${U.esc(U.fmtDate(days[0], { day: 'numeric', month: 'short' }))} – ${U.esc(U.fmtDate(days[6], { day: 'numeric', month: 'short' }))}</span></div>
+    ${week.some(list => list.length) ? '' : '<p class="muted small secnote">Nothing this week yet. Add activities with a time in the ☑ Plan tab and they show up here.</p>'}
+    <div class="wk">
+      <div class="wk-head"><span></span>${days.map(d => `<span class="wk-d${d === today ? ' today' : ''}">${U.esc(U.fmtDate(d, { weekday: 'short' }))}<b>${+d.slice(8)}</b></span>`).join('')}</div>
+      ${hasUntimed ? `<div class="wk-allday"><span class="wk-notime">No time</span>${week.map((list, i) => `<div class="wk-cell${days[i] === today ? ' today' : ''}">${list.filter(t => !t.time).map(t =>
+        `<button type="button" class="${schedClass(t, today)}" data-act="schedOpen" data-id="${t.id}" aria-label="${U.esc(t.text)}"><b>${U.esc(t.text)}</b></button>`).join('')}</div>`).join('')}</div>` : ''}
+      <div class="wk-body" style="--hours:${hours.length + (gapAt >= 0 ? SCHED_NOW_GAP : 0)}">
+        <div class="wk-times">${hours.map((h, i) => gapAt < 0 && nowCovers(h, nowMin) ? '' : `<span style="top:calc(var(--hour) * ${rowTop(i)})">${String(h).padStart(2, '0')}:00</span>`).join('')}</div>
+        ${hours.map((h, i) => `<i class="wk-line${i && hours[i - 1] !== h - 1 ? ' jump' : ''}" style="top:calc(var(--hour) * ${rowTop(i)})"></i>`).join('')}
+        ${timed.map((list, i) => `<div class="wk-col${days[i] === today ? ' today' : ''}">${schedLanes(list).map(it => schedBlock(it, today, y)).join('')}</div>`).join('')}
+        <div class="wk-now" style="top:calc(var(--hour) * ${nowTop.toFixed(3)})"><b>${nowHM()}</b></div>
+      </div>
+    </div>
+  </section>`;
+}
+
+// Tap a block: the narrow columns cut long names, so the sheet shows it in full.
+function renderSchedDlg() {
+  const t = Store.get('tasks', ui.schedOpen);
+  if (!t || t.deleted) return $('#schedDlg').close();
+  const today = U.today();
+  const when = t.time ? `${t.time}${t.end ? '–' + t.end : ''}` : 'No time';
+  $('#schedBody').innerHTML = `<p class="muted small">${U.esc(U.fmtDate(t.date, { weekday: 'long', day: 'numeric', month: 'short' }))} · ${when}${isLate(t, today) ? ' · Late' : isMissed(t, today) ? ' · Missed' : ''}</p>
+    <ul class="tasks"><li class="task${t.done ? ' done' : ''}${isMissed(t, today) ? ' missed' : ''}">
+      <label class="check"><input type="checkbox" data-act="toggleTask" data-id="${t.id}"${t.done ? ' checked' : ''}><span class="box" aria-hidden="true"></span><span class="text">${U.esc(t.text)}</span></label>
+    </li></ul>
+    <div class="actions">
+      <button type="button" class="btn danger" data-act="delTask" data-id="${t.id}">Delete</button>
+      <button type="button" class="btn primary grow" data-act="schedEdit" data-id="${t.id}">✏️ Edit in Plan</button>
+    </div>`;
+}
+
+// Keep the time now in view when the Schedule opens.
+function scrollToNow() {
+  const el = $('.wk-now');
+  if (el) window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - window.innerHeight * 0.35);
+}
+
 function viewPlan() {
   if (ui.planMode === 'notes') return viewNotes();
+  if (ui.planMode === 'schedule') return viewSchedule();
   const today = U.today();
   const tomorrow = U.addDays(today, 1);
   const d = ui.planDate;
@@ -320,11 +468,12 @@ function viewPlan() {
     </div>` : ''}
 
     <form id="taskForm" class="addrow dock" autocomplete="off">
-      <div class="addfield">
+      <div class="addfield${ui.taskTime ? ' timed' : ''}">
         <textarea id="taskInput" class="growbox" rows="1" placeholder="${ui.dailyOn ? 'Add a daily activity…' : 'Add an activity…'}" maxlength="1000" enterkeyhint="done"></textarea>
         <button type="button" class="addclear" data-act="clearTask" aria-label="Clear">×</button>
-        ${ui.taskTime ? `<button type="button" class="duechip" data-act="clearTaskTime" aria-label="Remove time">${ui.taskTime} ×</button>` : ''}
+        ${ui.taskTime ? `<button type="button" class="duechip" data-act="clearTaskTime" aria-label="Remove time">${ui.taskTime}${ui.taskEnd ? '–' + ui.taskEnd : ''} ×</button>` : ''}
         <label class="duetog${ui.taskTime ? ' set' : ''}" title="Time"><input type="time" id="taskTime" value="${ui.taskTime}" aria-label="Time"><span>🕐</span></label>
+        ${ui.taskTime ? `<label class="duetog${ui.taskEnd ? ' set' : ''}" title="End time"><input type="time" id="taskEnd" value="${ui.taskEnd}" aria-label="End time"><span>🏁</span></label>` : ''}
         <label class="dailytog" title="Repeat Mon–Fri"><input type="checkbox" id="taskDaily" aria-label="Repeat Mon–Fri"${ui.dailyOn ? ' checked' : ''}><span>🔁</span></label>
       </div>
       <button class="btn primary addbtn" type="submit" aria-label="Add">+</button>
@@ -341,18 +490,19 @@ function changeRoutine(r, fields) {
   }
 }
 
-function saveEdit(id, text, time) {
+function saveEdit(id, text, time, end) {
   const t = Store.get('tasks', id);
   if (!text) return toast('Type a name, or tap Cancel.');
   ui.editing = null;
   ui.editTime = null;
-  if (!t || t.deleted || (text === t.text && time === (t.time || ''))) return render();
+  ui.editEnd = null;
+  if (!t || t.deleted || (text === t.text && time === (t.time || '') && end === (t.end || ''))) return render();
   const r = t.routine && Store.get('routines', t.routine);
   if (r && !r.deleted && t.date >= U.today()) {
-    changeRoutine(r, { text, time });
+    changeRoutine(r, { text, time, end });
     toast('Changed for today and every day after');
   } else {
-    Store.upsert('tasks', { ...t, text, time });
+    Store.upsert('tasks', { ...t, text, time, end });
   }
 }
 
@@ -3065,7 +3215,7 @@ function applyTheme(t) {
 // ---------- Events ----------
 
 const actions = {
-  tab(el) { ui.tab = el.dataset.v; lsSet('dt.tab', ui.tab); render(); window.scrollTo(0, 0); },
+  tab(el) { ui.tab = el.dataset.v; lsSet('dt.tab', ui.tab); render(); window.scrollTo(0, 0); scrollToNow(); },
   planShift(el) { ui.planDate = U.addDays(ui.planDate, +el.dataset.v); render(); },
   planJump(el) { ui.planDate = el.dataset.v === 'tomorrow' ? U.addDays(U.today(), 1) : U.today(); render(); },
   delTask(el) {
@@ -3078,11 +3228,26 @@ It will still come back on other days. To stop it for good, tap ⚙ Manage in th
       : `Delete "${t.text}"?`;
     if (confirm(msg)) Store.remove('tasks', t.id);
   },
-  editTask(el) { ui.editing = el.dataset.id; ui.editTime = null; render(); },
-  clearTaskTime() { ui.taskTime = ''; render(); $('#taskInput').focus(); },
-  clearEditTime() { ui.editTime = ''; render(); },
-  cancelEdit() { ui.editing = null; ui.editDue = null; ui.editTime = null; render(); },
-  planMode(el) { ui.planMode = el.dataset.v; ui.notePick = null; ui.editing = null; lsSet('dt.planMode', ui.planMode); render(); },
+  editTask(el) { ui.editing = el.dataset.id; ui.editTime = null; ui.editEnd = null; render(); },
+  clearTaskTime() { ui.taskTime = ''; ui.taskEnd = ''; render(); $('#taskInput').focus(); },
+  clearEditTime() { ui.editTime = ''; ui.editEnd = ''; render(); },
+  cancelEdit() { ui.editing = null; ui.editDue = null; ui.editTime = null; ui.editEnd = null; render(); },
+  planMode(el) { ui.planMode = el.dataset.v; ui.notePick = null; ui.editing = null; lsSet('dt.planMode', ui.planMode); render(); window.scrollTo(0, 0); scrollToNow(); },
+  schedOpen(el) { ui.schedOpen = el.dataset.id; renderSchedDlg(); $('#schedDlg').showModal(); },
+  schedEdit(el) {
+    const t = Store.get('tasks', el.dataset.id);
+    $('#schedDlg').close();
+    if (!t || t.deleted) return;
+    ui.planMode = 'plan';
+    lsSet('dt.planMode', ui.planMode);
+    ui.planDate = t.date;
+    if (t.done) ui.doneOpen = true;
+    ui.editing = t.id;
+    ui.editTime = null;
+    ui.editEnd = null;
+    render();
+    $('#editInput').scrollIntoView({ block: 'center' });
+  },
   clearNote() { const i = $('#noteInput'); i.value = ''; fitBox(i); i.focus(); },
   clearNoteDue() { ui.noteDue = ''; render(); $('#noteInput').focus(); },
   notePick(el) { ui.notePick = ui.notePick === el.dataset.id ? null : el.dataset.id; render(); },
@@ -3123,11 +3288,11 @@ Past days and today stay as they are.`)) return;
       }
     } else {
       // Bring back weekend copies removed by the switch, on the days being shown.
-      for (const d of new Set([today, ui.planDate])) {
+      for (const d of routineDays()) {
         const id = routineTaskId(r.id, d);
         const t = Store.get('tasks', id);
-        if (d >= today && d >= r.start && isWeekend(d) && t && t.deleted) {
-          Store.upsert('tasks', { id, text: r.text, time: r.time || '', date: d, done: false, routine: r.id, createdAt: r.createdAt });
+        if (d >= today && d >= routineStart(r) && isWeekend(d) && t && t.deleted) {
+          Store.upsert('tasks', { id, text: r.text, time: r.time || '', end: r.end || '', date: d, done: false, routine: r.id, createdAt: r.createdAt });
         }
       }
     }
@@ -3353,13 +3518,21 @@ document.addEventListener('change', async e => {
   } else if (el.id === 'editDue') {
     ui.editDue = el.value; render();
   } else if (el.id === 'taskTime') {
-    ui.taskTime = el.value; render(); $('#taskInput').focus();
+    ui.taskTime = el.value;
+    if (!el.value) ui.taskEnd = '';
+    render(); $('#taskInput').focus();
+  } else if (el.id === 'taskEnd') {
+    ui.taskEnd = el.value; render(); $('#taskInput').focus();
   } else if (el.id === 'editTime') {
-    ui.editTime = el.value; render();
+    ui.editTime = el.value;
+    if (!el.value) ui.editEnd = '';
+    render();
+  } else if (el.id === 'editEnd') {
+    ui.editEnd = el.value; render();
   } else if (el.dataset.act === 'dailyTime') {
     const r = Store.get('routines', el.dataset.id);
     if (r && !r.deleted) {
-      changeRoutine(r, { time: el.value });
+      changeRoutine(r, { time: el.value, end: '' });
       toast(el.value ? `Set to ${el.value} from today on` : 'Time removed from today on');
     }
   } else if (el.dataset.act === 'notePlanDate' && el.value) {
@@ -3442,20 +3615,21 @@ document.addEventListener('submit', e => {
     // Clear the box and 🔁 first: saving redraws the page and would put them back.
     const daily = $('#taskDaily').checked;
     const time = ui.taskTime;
+    const end = ui.taskEnd;
     input.value = '';
     ui.dailyOn = false;
     ui.taskTime = '';
+    ui.taskEnd = '';
     if (daily) {
-      // New daily activities run Mon–Fri; added on a weekend, they start Monday.
-      let start = ui.planDate;
-      while (isWeekend(start)) start = U.addDays(start, 1);
-      const r = Store.upsert('routines', { id: U.uid(), text, time, start, days: 'weekdays', createdAt: Date.now() });
-      if (start === ui.planDate) {
-        Store.upsert('tasks', { id: routineTaskId(r.id, start), text, time, date: start, done: false, routine: r.id, createdAt: r.createdAt });
+      // New daily activities run Mon–Fri; added on a weekend, the first one is Monday.
+      const start = ui.planDate;
+      const r = Store.upsert('routines', { id: U.uid(), text, time, end, start, days: 'weekdays', createdAt: Date.now() });
+      if (!isWeekend(start)) {
+        Store.upsert('tasks', { id: routineTaskId(r.id, start), text, time, end, date: start, done: false, routine: r.id, createdAt: r.createdAt });
       }
-      toast(start === ui.planDate ? 'Added. It will show up Mon–Fri.' : 'Added. It starts Monday and shows up Mon–Fri.');
+      toast(isWeekend(start) ? 'Added. It starts Monday and shows up Mon–Fri.' : 'Added. It will show up Mon–Fri.');
     } else {
-      Store.upsert('tasks', { id: U.uid(), text, time, date: ui.planDate, done: false, createdAt: Date.now() });
+      Store.upsert('tasks', { id: U.uid(), text, time, end, date: ui.planDate, done: false, createdAt: Date.now() });
     }
     $('#taskInput').focus();
   } else if (e.target.id === 'noteForm') {
@@ -3473,7 +3647,8 @@ document.addEventListener('submit', e => {
     saveNote(e.target.dataset.id, $('#editInput').value.trim(), $('#editDue').value);
   } else if (e.target.classList.contains('editrow')) {
     e.preventDefault();
-    saveEdit(e.target.dataset.id, $('#editInput').value.trim(), $('#editTime').value);
+    const time = $('#editTime').value;
+    saveEdit(e.target.dataset.id, $('#editInput').value.trim(), time, time && $('#editEnd') ? $('#editEnd').value : '');
   } else if (e.target.id === 'tradeForm') {
     e.preventDefault();
     saveTrade();
@@ -3573,14 +3748,19 @@ Store.on(() => {
   if ($('#weekDlg').open) renderWeek(ui.weekOpen);
   if ($('#budgetViewDlg').open) renderBudget(ui.budgetOpen);
   if ($('#recapDlg').open) renderRecapDlg();
+  if ($('#schedDlg').open) renderSchedDlg();
   if ($('#dayTagDlg').open && !$('#dayTagList [data-daytag]')) renderDayTags();
 });
 
 // Redraw when an activity's time passes, so it shows Late without a reload.
+// The Schedule also moves its Now line every minute.
 let lateSeen = '';
 setInterval(() => {
-  const k = tasksOn(U.today()).filter(t => isLate(t)).map(t => t.id).join();
+  const sched = ui.tab === 'plan' && ui.planMode === 'schedule' ? nowHM() : '';
+  const k = tasksOn(U.today()).filter(t => isLate(t)).map(t => t.id).join() + sched;
   if (k === lateSeen) return;
+  // Not while a box is open: the redraw would close a time picker.
+  if (document.activeElement && document.activeElement.matches('textarea, input[type="time"], input[type="date"]')) return;
   lateSeen = k;
   if (ui.tab === 'plan' || ui.tab === 'calendar') render();
 }, 30000);
@@ -3594,9 +3774,11 @@ document.addEventListener('visibilitychange', () => {
 
 // ---------- Start ----------
 
-// The Plan add bar sits on top of the tab bar, so keep its height handy for CSS.
+// The Plan add bar sits on top of the tab bar and the Schedule's day row sticks
+// under the top bar, so keep their heights handy for CSS.
 function measureTabbar() {
   document.documentElement.style.setProperty('--tabbar-h', $('.tabbar').offsetHeight + 'px');
+  document.documentElement.style.setProperty('--topbar-h', $('.topbar').offsetHeight + 'px');
 }
 measureTabbar();
 addEventListener('resize', measureTabbar);
@@ -3604,6 +3786,8 @@ addEventListener('resize', measureTabbar);
 applyTheme(lsGet('dt.theme', 'dark'));
 Store.load();
 render();
+history.scrollRestoration = 'manual'; // or the browser undoes this scroll after loading
+scrollToNow();
 maybeShowReview();
 Store.syncNow().then(maybeShowReview);
 
