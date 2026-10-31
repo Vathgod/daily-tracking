@@ -285,20 +285,11 @@ function planNote(id, date) {
 
 // ---------- Schedule ----------
 // This week, Monday to Sunday, as a timetable of the activities set in Plan.
-// An activity with no end time shows as 1 hour.
+// Days have a fixed width and scroll sideways; an hour's row grows to fit its boxes.
 
 const SCHED_COLORS = 8;
-const SCHED_MIN = 25; // shortest block in minutes, so its name still fits
-const SCHED_NOW_GAP = 0.45; // height of the Now line's own row, in hours
 
 function hmMinutes(hm) { return +hm.slice(0, 2) * 60 + +hm.slice(3, 5); }
-
-// Start and end in minutes. An end before the start runs past midnight, so the block stops at 24:00.
-function schedSpan(t) {
-  const from = hmMinutes(t.time);
-  const end = t.end ? hmMinutes(t.end) : from + 60;
-  return { from, to: Math.min(24 * 60, end > from ? end : 24 * 60) };
-}
 
 // The same name always gets the same color.
 function schedColor(text) {
@@ -307,41 +298,12 @@ function schedColor(text) {
   return h % SCHED_COLORS;
 }
 
-// Activities at the same time share the column side by side.
-function schedLanes(tasks) {
-  const items = tasks.map(t => {
-    const { from, to } = schedSpan(t);
-    return { t, from, to, shown: Math.max(to, from + SCHED_MIN), lane: 0, lanes: 1 };
-  });
-  let group = [], groupEnd = -1;
-  const close = () => { const n = Math.max(...group.map(x => x.lane)) + 1; group.forEach(x => { x.lanes = n; }); group = []; };
-  for (const it of items) {
-    if (group.length && it.from >= groupEnd) close();
-    const taken = group.filter(x => x.shown > it.from).map(x => x.lane);
-    while (taken.includes(it.lane)) it.lane++;
-    group.push(it);
-    groupEnd = Math.max(groupEnd, it.shown);
-  }
-  if (group.length) close();
-  return items;
-}
-
-function schedClass(t, today) {
+function schedBlock(t, today) {
   const state = t.done ? ' done' : t.movedTo ? ' moved' : isMissed(t, today) ? ' missed' : isLate(t, today) ? ' late' : '';
-  return `wk-b wc${schedColor(t.text)}${state}`;
+  const when = t.time ? `${t.time}${t.end ? '–' + t.end : ''}` : '';
+  const label = `${t.text}, ${U.fmtDate(t.date, { weekday: 'short' })}${t.time ? ` ${t.time}${t.end ? ' to ' + t.end : ''}` : ''}`;
+  return `<button type="button" class="wk-b wc${schedColor(t.text)}${state}" data-act="schedOpen" data-id="${t.id}" aria-label="${U.esc(label)}">${when ? `<small>${when}</small>` : ''}<b>${U.esc(t.text)}</b></button>`;
 }
-
-function schedBlock(it, today, y) {
-  const { t, from, to, shown, lane, lanes } = it;
-  const w = 100 / lanes;
-  const label = `${t.text}, ${U.fmtDate(t.date, { weekday: 'short' })} ${t.time}${t.end ? ' to ' + t.end : ''}`;
-  return `<button type="button" class="${schedClass(t, today)}${to - from < 40 || lanes > 1 ? ' short' : ''}" data-act="schedOpen" data-id="${t.id}" aria-label="${U.esc(label)}"
-    style="top:calc(var(--hour) * ${y(Math.min(from, 24 * 60 - SCHED_MIN)).toFixed(3)});height:calc(var(--hour) * ${((shown - from) / 60).toFixed(3)});left:calc(${(lane * w).toFixed(2)}% + 1px);width:calc(${w.toFixed(2)}% - 2px)">
-    <small>${t.time}</small><b>${U.esc(t.text)}</b></button>`;
-}
-
-// The Now label sits on top of an hour's label when the time is close to it.
-function nowCovers(h, nowMin) { const d = nowMin - h * 60; return d > -10 && d < 18; }
 
 function viewSchedule() {
   const today = U.today();
@@ -350,40 +312,29 @@ function viewSchedule() {
   const week = days.map(d => tasksOn(d));
   const timed = week.map(list => list.filter(t => t.time));
   const nowMin = hmMinutes(nowHM());
-  const nowH = Math.floor(nowMin / 60);
-  // Only the hours with an activity on some day this week, so there's less to scroll.
-  const used = new Set();
-  for (const s of timed.flat().map(schedSpan)) {
-    const end = Math.min(24 * 60, Math.max(s.to, s.from + SCHED_MIN));
-    for (let h = Math.floor(s.from / 60); h * 60 < end; h++) used.add(h);
-  }
-  const hours = [...used].sort((a, b) => a - b);
-  // When this hour is hidden, the Now line gets a thin row of its own in the right place.
-  const gapAt = used.has(nowH) ? -1 : hours.filter(h => h < nowH).length;
-  const rowTop = i => i + (gapAt >= 0 && i >= gapAt ? SCHED_NOW_GAP : 0);
-  const y = m => rowTop(hours.indexOf(Math.floor(m / 60))) + (m % 60) / 60;
-  const nowTop = gapAt >= 0 ? gapAt + SCHED_NOW_GAP / 2 : y(nowMin);
+  // A row for each hour something starts in, so there's less to scroll.
+  const starts = timed.flat().map(t => hmMinutes(t.time));
+  const hours = [...new Set(starts.map(m => Math.floor(m / 60)))].sort((a, b) => a - b);
+  // The Now line goes above the first hour where nothing has started yet.
+  const nowAt = hours.findIndex(h => Math.min(...starts.filter(m => Math.floor(m / 60) === h)) > nowMin);
+  const nowRow = `<div class="wk-now"><b>${nowHM()}</b></div>`;
+  const cells = lists => lists.map((list, i) => `<div class="wk-cell${days[i] === today ? ' today' : ''}">${list.map(t => schedBlock(t, today)).join('')}</div>`).join('');
   const hasUntimed = week.some(list => list.some(t => !t.time));
 
   return `<section class="view">
     ${planSwitch()}
     <div class="sechead"><h3 class="sectitle">🕐 This week</h3><span class="muted small">${U.esc(U.fmtDate(days[0], { day: 'numeric', month: 'short' }))} – ${U.esc(U.fmtDate(days[6], { day: 'numeric', month: 'short' }))}</span></div>
     ${week.some(list => list.length) ? '' : '<p class="muted small secnote">Nothing this week yet. Add activities with a time in the ☑ Plan tab and they show up here.</p>'}
-    <div class="wk">
-      <div class="wk-head"><span></span>${days.map(d => `<span class="wk-d${d === today ? ' today' : ''}">${U.esc(U.fmtDate(d, { weekday: 'short' }))}<b>${+d.slice(8)}</b></span>`).join('')}</div>
-      ${hasUntimed ? `<div class="wk-allday"><span class="wk-notime">No time</span>${week.map((list, i) => `<div class="wk-cell${days[i] === today ? ' today' : ''}">${list.filter(t => !t.time).map(t =>
-        `<button type="button" class="${schedClass(t, today)}" data-act="schedOpen" data-id="${t.id}" aria-label="${U.esc(t.text)}"><b>${U.esc(t.text)}</b></button>`).join('')}</div>`).join('')}</div>` : ''}
-      <div class="wk-body" style="--hours:${hours.length + (gapAt >= 0 ? SCHED_NOW_GAP : 0)}">
-        <div class="wk-times">${hours.map((h, i) => gapAt < 0 && nowCovers(h, nowMin) ? '' : `<span style="top:calc(var(--hour) * ${rowTop(i)})">${String(h).padStart(2, '0')}:00</span>`).join('')}</div>
-        ${hours.map((h, i) => `<i class="wk-line${i && hours[i - 1] !== h - 1 ? ' jump' : ''}" style="top:calc(var(--hour) * ${rowTop(i)})"></i>`).join('')}
-        ${timed.map((list, i) => `<div class="wk-col${days[i] === today ? ' today' : ''}">${schedLanes(list).map(it => schedBlock(it, today, y)).join('')}</div>`).join('')}
-        <div class="wk-now" style="top:calc(var(--hour) * ${nowTop.toFixed(3)})"><b>${nowHM()}</b></div>
-      </div>
-    </div>
+    <div class="wk"><div class="wk-grid">
+      <span class="wk-corner"></span>${days.map(d => `<span class="wk-d${d === today ? ' today' : ''}">${U.esc(U.fmtDate(d, { weekday: 'short' }))}<b>${+d.slice(8)}</b></span>`).join('')}
+      ${hasUntimed ? `<span class="wk-time wk-notime">No time</span>${cells(week.map(list => list.filter(t => !t.time)))}` : ''}
+      ${hours.map((h, i) => `${i === nowAt ? nowRow : ''}<span class="wk-time">${String(h).padStart(2, '0')}:00</span>${cells(timed.map(list => list.filter(t => Math.floor(hmMinutes(t.time) / 60) === h)))}`).join('')}
+      ${nowAt < 0 ? nowRow : ''}
+    </div></div>
   </section>`;
 }
 
-// Tap a block: the narrow columns cut long names, so the sheet shows it in full.
+// Tap a block to tick, edit or delete it.
 function renderSchedDlg() {
   const t = Store.get('tasks', ui.schedOpen);
   if (!t || t.deleted) return $('#schedDlg').close();
@@ -399,10 +350,12 @@ function renderSchedDlg() {
     </div>`;
 }
 
-// Keep the time now in view when the Schedule opens.
+// Open the Schedule with today as the first day and the time now in view.
 function scrollToNow() {
-  const el = $('.wk-now');
-  if (el) window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - window.innerHeight * 0.35);
+  const wk = $('.wk');
+  if (!wk) return;
+  wk.scrollLeft = $('.wk-d.today').offsetLeft - $('.wk-corner').offsetWidth;
+  wk.scrollTop = $('.wk-now').offsetTop - wk.clientHeight * 0.35;
 }
 
 function viewPlan() {
@@ -3180,7 +3133,11 @@ function render() {
   const noteDraft = $('#noteInput') ? $('#noteInput').value : '';
   const noteFocus = document.activeElement && document.activeElement.id === 'noteInput';
   const editDraft = $('#editInput') && $('#editInput').closest('form').dataset.id === ui.editing ? $('#editInput').value : null;
+  const oldWk = $('.wk');
+  const wkScroll = oldWk && [oldWk.scrollLeft, oldWk.scrollTop]; // a redraw shouldn't move the Schedule
   keepRecap($('#view'), () => { $('#view').innerHTML = VIEWS[ui.tab](); });
+  const newWk = $('.wk');
+  if (newWk && wkScroll) [newWk.scrollLeft, newWk.scrollTop] = wkScroll;
   document.body.dataset.tab = ui.tab;
   for (const b of $$('.tabbar button')) b.classList.toggle('on', b.dataset.v === ui.tab);
   renderHeader();
@@ -3774,8 +3731,8 @@ document.addEventListener('visibilitychange', () => {
 
 // ---------- Start ----------
 
-// The Plan add bar sits on top of the tab bar and the Schedule's day row sticks
-// under the top bar, so keep their heights handy for CSS.
+// The Plan add bar sits on top of the tab bar and the Schedule fits between the
+// top bar and the tab bar, so keep their heights handy for CSS.
 function measureTabbar() {
   document.documentElement.style.setProperty('--tabbar-h', $('.tabbar').offsetHeight + 'px');
   document.documentElement.style.setProperty('--topbar-h', $('.topbar').offsetHeight + 'px');

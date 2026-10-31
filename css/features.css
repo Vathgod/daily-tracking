@@ -373,50 +373,51 @@
   .planswitch { gap: 2px; }
   .planswitch button { font-size: 13px; gap: 3px; padding-inline: 2px; }
 }
-.wk { --hour: 56px; --tw: 34px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
-.wk-head, .wk-allday, .wk-body { display: grid; grid-template-columns: var(--tw) repeat(7, minmax(0, 1fr)); }
-.wk-head {
-  position: sticky; top: var(--topbar-h, 56px); z-index: 3; background: var(--surface);
-  border-bottom: 1px solid var(--border); border-radius: var(--radius) var(--radius) 0 0;
+/* No add bar here, so the page itself has nothing left to scroll. */
+body:has(.wk) { padding-bottom: var(--tabbar-h, 64px); }
+body:has(.wk) main { padding-bottom: 12px; }
+/* Scrolls inside its own box so the day row and the times can stay pinned. It leaves the page's column on big screens, where the days stretch to fill the room. */
+.wk {
+  --dw: 190px; --tw: 44px; --w: min(100vw - 32px, 1400px);
+  position: relative; width: var(--w); margin-inline: calc(50% - var(--w) / 2);
+  max-height: max(340px, calc(100dvh - var(--topbar-h, 56px) - var(--tabbar-h, 64px) - 118px));
+  overflow: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity; scroll-padding-left: var(--tw);
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
 }
-.wk-d { display: grid; justify-items: center; padding: 5px 0; border-left: 1px solid var(--border); color: var(--muted); font-size: 11px; font-weight: 700; }
-.wk-d b { color: var(--text); font-size: 14px; font-variant-numeric: tabular-nums; }
+.wk-grid { display: grid; grid-template-columns: var(--tw) repeat(7, minmax(var(--dw), 1fr)); width: calc(var(--tw) + var(--dw) * 7); min-width: 100%; }
+.wk-corner, .wk-d { position: sticky; top: 0; background: var(--surface); border-bottom: 1px solid var(--border); }
+.wk-corner { left: 0; z-index: 4; }
+.wk-d {
+  z-index: 3; display: flex; justify-content: center; align-items: baseline; gap: 5px; padding: 7px 0; scroll-snap-align: start;
+  border-left: 1px solid var(--border); color: var(--muted); font-size: 12px; font-weight: 700;
+}
+.wk-d b { color: var(--text); font-size: 15px; font-variant-numeric: tabular-nums; }
+.wk-d.today { background: color-mix(in srgb, var(--violet) 8%, var(--surface)); }
 .wk-d.today, .wk-d.today b { color: var(--violet); }
-.wk-allday { border-bottom: 1px solid var(--border); }
-.wk-notime { padding: 4px 2px; color: var(--muted); font-size: 9px; font-weight: 700; line-height: 1.15; text-align: center; }
-.wk-cell { display: grid; align-content: start; gap: 2px; padding: 2px 1px; border-left: 1px solid var(--border); min-width: 0; }
-.wk-cell.today, .wk-col.today { background-color: color-mix(in srgb, var(--violet) 8%, transparent); }
-.wk-body { position: relative; height: calc(var(--hour) * var(--hours)); }
-.wk-times { position: relative; }
-.wk-times span { position: absolute; right: 3px; margin-top: 2px; color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
-.wk-col { position: relative; min-width: 0; border-left: 1px solid var(--border); }
-.wk-line { position: absolute; left: var(--tw); right: 0; height: 1px; background: var(--border); pointer-events: none; }
-.wk-line.jump { height: 2px; margin-top: -1px; background: var(--muted); opacity: .55; } /* hours are hidden here */
+.wk-time {
+  position: sticky; left: 0; z-index: 2; padding-top: 9px; text-align: center; background: var(--surface); border-bottom: 1px solid var(--border);
+  color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums;
+}
+.wk-notime { font-weight: 700; line-height: 1.15; }
+.wk-cell { display: grid; align-content: start; gap: 4px; padding: 4px; min-width: 0; border-left: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.wk-cell.today { background-color: color-mix(in srgb, var(--violet) 8%, transparent); }
 .wk-b {
-  --c: var(--violet); display: flex; flex-direction: column; justify-content: flex-start; min-width: 0; padding: 2px 3px; overflow: hidden; text-align: left; line-height: 1.15;
-  border: 1px solid color-mix(in srgb, var(--c) 45%, transparent); border-radius: 6px;
+  --c: var(--violet); display: block; width: 100%; min-width: 0; padding: 6px 7px; text-align: left; line-height: 1.3;
+  border: 1px solid color-mix(in srgb, var(--c) 45%, transparent); border-radius: 10px;
   background: color-mix(in srgb, var(--c) 26%, var(--surface)); color: color-mix(in srgb, var(--c) 30%, var(--text));
 }
-.wk-col .wk-b { position: absolute; }
-.wk-b b { display: block; font-size: 10px; font-weight: 600; overflow-wrap: anywhere; }
-.wk-b small { display: block; font-size: 9px; opacity: .8; font-variant-numeric: tabular-nums; }
-.wk-b.short small { display: none; }
+.wk-b b { display: block; font-size: 13px; font-weight: 600; white-space: pre-line; overflow-wrap: break-word; }
+.wk-b small { display: block; margin-bottom: 2px; font-size: 11px; opacity: .8; font-variant-numeric: tabular-nums; }
 .wc0 { --c: var(--pink); } .wc1 { --c: var(--orange); } .wc2 { --c: var(--blue); } .wc3 { --c: var(--pos); }
 .wc4 { --c: var(--violet); } .wc5 { --c: var(--amber); } .wc6 { --c: #14b8a6; } .wc7 { --c: var(--muted); }
 .wk-b.done, .wk-b.moved { opacity: .45; }
 .wk-b.done b { text-decoration: line-through; }
 .wk-b.missed { --c: var(--neg); }
-.wk-b.late { border: 2px solid var(--amber); padding: 1px 2px; }
+.wk-b.late { border: 2px solid var(--amber); padding: 5px 6px; }
 #schedBody .actions { margin-top: 12px; }
-.wk-now { position: absolute; z-index: 2; left: var(--tw); right: 0; height: 2px; margin-top: -1px; background: var(--pink); pointer-events: none; }
+.wk-now { grid-column: 1 / -1; position: relative; display: flex; align-items: center; height: 20px; pointer-events: none; }
+.wk-now::before { content: ''; position: absolute; left: 0; right: 0; height: 2px; background: var(--pink); }
 .wk-now b {
-  position: absolute; left: calc(var(--tw) * -1); top: 50%; transform: translateY(-50%); width: calc(var(--tw) - 1px); padding: 1px 0; text-align: center;
-  border-radius: 4px; background: var(--pink); color: #fff; font-size: 9.5px; font-variant-numeric: tabular-nums;
-}
-@media (min-width: 600px) {
-  .wk { --tw: 44px; }
-  .wk-b b { font-size: 12px; }
-  .wk-b small { font-size: 10.5px; }
-  .wk-times span { font-size: 11px; right: 5px; }
-  .wk-now b { font-size: 10.5px; }
+  position: sticky; left: 0; z-index: 1; width: var(--tw); padding: 1px 0; text-align: center;
+  border-radius: 6px; background: var(--pink); color: #fff; font-size: 11px; font-variant-numeric: tabular-nums;
 }
