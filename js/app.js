@@ -459,6 +459,15 @@ function saveEdit(id, text, time, end) {
   }
 }
 
+function saveDaily(id, text) {
+  const r = Store.get('routines', id);
+  if (!text) return toast('Type a name, or tap Cancel.');
+  ui.editing = null;
+  if (!r || r.deleted || text === r.text) return render();
+  changeRoutine(r, { text });
+  toast('Changed for today and every day after');
+}
+
 function saveNote(id, text, due) {
   const n = Store.get('notes', id);
   if (!text) return toast('Type the note, or tap Cancel.');
@@ -501,9 +510,14 @@ function celebrate() {
 function manageDaily() {
   const rs = routines();
   return `<div class="managebox">
-    <p class="muted small">These are added to your plan every day, or Mon–Fri only. Tap the days to switch. Stop one to end it. Past days stay as they are.</p>
-    ${rs.length ? `<ul class="dailylist">${rs.map(r => `<li><span class="text">${U.esc(r.text)}</span>
-      <span class="dailyacts"><label class="mini pickdate">🕐 ${r.time || 'Time'}<input type="time" data-act="dailyTime" data-id="${r.id}" value="${r.time || ''}" aria-label="Time"></label>
+    <p class="muted small">These are added to your plan every day, or Mon–Fri only. Tap ✏️ to change the text, or tap the days to switch. Stop one to end it. Past days stay as they are.</p>
+    ${rs.length ? `<ul class="dailylist">${rs.map(r => ui.editing === r.id ? `<li><form class="editrow wrapedit" data-kind="daily" data-id="${r.id}" autocomplete="off">
+      <textarea id="editInput" class="growbox" rows="1" maxlength="1000" enterkeyhint="done" aria-label="Daily activity">${U.esc(r.text)}</textarea>
+      <span class="editbtns"><button type="submit" class="mini save">Save</button>
+      <button type="button" class="mini" data-act="cancelEdit">Cancel</button></span>
+    </form></li>` : `<li><span class="text">${U.esc(r.text)}</span>
+      <span class="dailyacts"><button type="button" class="mini" data-act="editTask" data-id="${r.id}" aria-label="Edit text">✏️</button>
+      <label class="mini pickdate">🕐 ${r.time || 'Time'}<input type="time" data-act="dailyTime" data-id="${r.id}" value="${r.time || ''}" aria-label="Time"></label>
       <button type="button" class="mini" data-act="dailyDays" data-id="${r.id}">${r.days === 'weekdays' ? 'Mon–Fri' : 'Every day'}</button>
       <button type="button" class="mini" data-act="stopDaily" data-id="${r.id}">Stop</button></span></li>`).join('')}</ul>`
       : '<p class="muted small">No daily activities. Turn on 🔁 Daily when adding one.</p>'}
@@ -3218,7 +3232,11 @@ It will still come back on other days. To stop it for good, tap ⚙ Manage in th
   clearTask() { const i = $('#taskInput'); i.value = ''; fitBox(i); i.focus(); },
   toggleDone() { ui.doneOpen = !ui.doneOpen; render(); },
   toggleMissed() { ui.missedOpen = !ui.missedOpen; render(); },
-  toggleManage() { ui.manageOpen = !ui.manageOpen; render(); },
+  toggleManage() {
+    ui.manageOpen = !ui.manageOpen;
+    if (Store.get('routines', ui.editing)) ui.editing = null;
+    render();
+  },
   stopDaily(el) {
     const r = Store.get('routines', el.dataset.id);
     if (!r || !confirm(`Stop adding "${r.text}" every day?
@@ -3602,6 +3620,9 @@ document.addEventListener('submit', e => {
   } else if (e.target.dataset.kind === 'note') {
     e.preventDefault();
     saveNote(e.target.dataset.id, $('#editInput').value.trim(), $('#editDue').value);
+  } else if (e.target.dataset.kind === 'daily') {
+    e.preventDefault();
+    saveDaily(e.target.dataset.id, $('#editInput').value.trim());
   } else if (e.target.classList.contains('editrow')) {
     e.preventDefault();
     const time = $('#editTime').value;

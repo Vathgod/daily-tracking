@@ -294,8 +294,9 @@ body[data-tab="plan"] .toast { bottom: calc(var(--tabbar-h, 64px) + 72px); }
 @media (prefers-reduced-motion: reduce) { .ring.full { animation: none; } }
 .badge.daily { background: color-mix(in srgb, var(--violet) 18%, transparent); color: var(--violet); }
 .dailylist { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-.dailylist li { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.dailyacts { display: flex; gap: 6px; flex-shrink: 0; }
+.dailylist li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.dailylist .text { flex: 1 1 140px; } /* on a phone the buttons drop to their own line, so the text keeps its room */
+.dailyacts { display: flex; gap: 6px; flex-shrink: 0; margin-left: auto; }
 
 /* ---------- Notes ---------- */
 .planswitch { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; background: var(--surface-2); padding: 4px; border-radius: 12px; }
