@@ -493,6 +493,7 @@ dialog::backdrop { background: rgba(0, 0, 0, .55); }
 .day .dp { font-size: 10px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .day .dt { font-size: 9px; color: var(--muted); margin-top: auto; }
 .day .dt.all { color: var(--pos); }
+.day .stars.ro { font-size: 7px; letter-spacing: 0; gap: 0; }
 .day.pos { background: var(--pos-bg); border-color: transparent; }
 .day.pos .dp { color: var(--pos); }
 .day.neg { background: var(--neg-bg); border-color: transparent; }

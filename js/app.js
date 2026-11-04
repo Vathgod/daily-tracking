@@ -2486,7 +2486,10 @@ function viewCalendar() {
   if (moneyMode) for (const e of pick(Money.list(first, last))) spend[e.date] = (spend[e.date] || 0) + Money.usd(e);
   const daySpend = moneyMode ? Money.byDay(first, last, true) : {};
   const budgetDays = budgetMode ? budgetDaysIn(first, last) : new Set();
-  const recapDays = !tasksMode && !moneyMode && !newsMode ? new Set(Store.list('recaps').map(r => r.id)) : new Set();
+  const pnlMode = !tasksMode && !moneyMode && !newsMode;
+  const recaps = pnlMode ? Object.fromEntries(Store.list('recaps').map(r => [r.id, r])) : {};
+  // Past Mon–Fri days with no trades say so, starting from the first trade ever.
+  const firstTrade = pnlMode ? tradesIn('0000-00-00', '9999-12-31').reduce((m, t) => !m || t.date < m ? t.date : m, '') : '';
   const dueBy = {};
   if (tasksMode) for (const n of notesSorted()) if (n.due >= first && n.due <= last) (dueBy[n.due] ||= []).push(n);
   let cells = '';
@@ -2507,9 +2510,12 @@ function viewCalendar() {
       : moneyMode ? (sp > 0 ? `<span class="dp">${Money.short(sp)}</span>` : '')
       : tasksMode
       ? b && b.tasks ? `<span class="dp">${Math.round(pct)}%</span><span class="dt">${b.done}/${b.tasks}</span>` : ''
-      : b && b.n ? `<span class="dp">${U.moneyShort(b.pnl)}</span><span class="dt">${b.n} trade${b.n > 1 ? 's' : ''}</span>` : '';
+      : (b && b.n ? `<span class="dp">${U.moneyShort(b.pnl)}</span>` : '')
+        + (recaps[ds] && recaps[ds].rating ? recapStars(ds, recaps[ds].rating, true) : '')
+        + (b && b.n ? `<span class="dt">${b.n} trade${b.n > 1 ? 's' : ''}</span>`
+          : firstTrade && ds >= firstTrade && ds < today && !isWeekend(ds) ? '<span class="dt">No trade</span>' : '');
     const due = dueBy[ds];
-    const pin = recapDays.has(ds) ? '<span class="duepin hot" title="Day recap">📝</span>'
+    const pin = recaps[ds] ? '<span class="duepin hot" title="Day recap">📝</span>'
       : due ? `<span class="duepin${due.some(n => isHot(n, today)) ? ' hot' : ''}" title="${due.length} due">📌${due.length > 1 ? due.length : ''}</span>` : '';
     cells += `<button type="button" class="day ${cls}${ds === today ? ' today' : ''}${ds === ui.calDay ? ' sel' : ''}" data-act="calDay" data-v="${ds}">
       <span class="dn">${d}</span>${main}${pin}
