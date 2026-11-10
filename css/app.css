@@ -297,6 +297,21 @@ body[data-tab="plan"] .toast { bottom: calc(var(--tabbar-h, 64px) + 72px); }
 .dailylist li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
 .dailylist .text { flex: 1 1 140px; } /* on a phone the buttons drop to their own line, so the text keeps its room */
 .dailyacts { display: flex; gap: 6px; flex-shrink: 0; margin-left: auto; }
+/* Mo–Su buttons that pick which days a daily activity shows up */
+.weekpick { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; flex: 1 0 100%; max-width: 360px; }
+.weekpick button {
+  border: 0; border-radius: 8px; padding: 6px 0; background: var(--surface-2); color: var(--muted);
+  font-size: 12px; font-weight: 600; transition: background .15s, color .15s;
+}
+.weekpick button.on {
+  background: color-mix(in srgb, var(--violet) 50%, transparent); color: var(--text); font-weight: 700;
+  box-shadow: inset 0 0 0 1px var(--violet);
+}
+.weekpick button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.addrow.dock.daily { flex-wrap: wrap; gap: 6px 8px; }
+.weekpick.add { max-width: none; }
+body[data-tab="plan"]:has(.addrow.daily) { padding-bottom: calc(76px + 34px + 64px + env(safe-area-inset-bottom)); }
+body[data-tab="plan"]:has(.addrow.daily) .toast { bottom: calc(var(--tabbar-h, 64px) + 106px); }
 
 /* ---------- Notes ---------- */
 .planswitch { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; background: var(--surface-2); padding: 4px; border-radius: 12px; }

@@ -33,6 +33,7 @@ const ui = {
   walletWs: null, // Sunday of the week shown on the wallet card (null = this week)
   acct: lsGet('dt.acct', 'all'),
   dailyOn: false,
+  taskDays: [0, 1, 2, 3, 4], // days picked for the daily activity being typed
   doneOpen: false,
   missedOpen: false,
   manageOpen: false,
@@ -85,14 +86,39 @@ function routines() {
   return Store.list('routines').sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
 }
 
-// A routine runs every day, or Mon–Fri only when days is 'weekdays'.
 function isWeekend(date) { return U.weekdayMon(date) >= 5; }
-function routineOn(r, date) { return date >= routineStart(r) && !(r.days === 'weekdays' && isWeekend(date)); }
+
+// The weekdays a routine runs on, 0 = Monday ... 6 = Sunday. Older ones were
+// saved as 'weekdays' (Mon–Fri) or 'all' (every day).
+const MON_FRI = [0, 1, 2, 3, 4];
+const DAY_SHORT = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
+const DAY_NAME = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+function routineWeekdays(r) {
+  if (Array.isArray(r.days)) return r.days;
+  return r.days === 'weekdays' ? MON_FRI : [0, 1, 2, 3, 4, 5, 6];
+}
+function routineOn(r, date) { return date >= routineStart(r) && routineWeekdays(r).includes(U.weekdayMon(date)); }
+
+// "every day", "Mon–Fri", "Tue & Fri", "Mon, Wed & Fri"
+function daysLabel(days) {
+  if (days.length === 7) return 'every day';
+  if (days.join() === MON_FRI.join()) return 'Mon–Fri';
+  const names = days.map(d => DAY_NAME[d]);
+  return names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} & ${names[names.length - 1]}`;
+}
+
+// A row of 7 day buttons. act is the click action; id goes along when set.
+function dayPicker(days, act, id, cls = '') {
+  return `<div class="weekpick${cls}" role="group" aria-label="Repeat on">${DAY_SHORT.map((s, i) => {
+    const on = days.includes(i);
+    return `<button type="button" class="${on ? 'on' : ''}" data-act="${act}" data-day="${i}"${id ? ` data-id="${id}"` : ''} aria-pressed="${on}" aria-label="${DAY_NAME[i]}">${s}</button>`;
+  }).join('')}</div>`;
+}
 
 // Daily activities added on a weekend used to be saved as starting the next
 // Monday. Switched to every day, those really start the day they were added.
 function routineStart(r) {
-  if (r.days === 'weekdays' || U.weekdayMon(r.start) !== 0) return r.start;
+  if (Array.isArray(r.days) || r.days === 'weekdays' || U.weekdayMon(r.start) !== 0) return r.start;
   const p = U.parts(new Date(r.createdAt), TZ);
   const made = `${p.year}-${p.month}-${p.day}`;
   return isWeekend(made) && made < r.start && U.daysBetween(made, r.start) <= 2 ? made : r.start;
@@ -420,14 +446,15 @@ function viewPlan() {
       ${ui.doneOpen ? taskList(done, today, { tag: true }) : ''}
     </div>` : ''}
 
-    <form id="taskForm" class="addrow dock" autocomplete="off">
+    <form id="taskForm" class="addrow dock${ui.dailyOn ? ' daily' : ''}" autocomplete="off">
+      ${ui.dailyOn ? dayPicker(ui.taskDays, 'taskDay', '', ' add') : ''}
       <div class="addfield${ui.taskTime ? ' timed' : ''}">
         <textarea id="taskInput" class="growbox" rows="1" placeholder="${ui.dailyOn ? 'Add a daily activity…' : 'Add an activity…'}" maxlength="1000" enterkeyhint="done"></textarea>
         <button type="button" class="addclear" data-act="clearTask" aria-label="Clear">×</button>
         ${ui.taskTime ? `<button type="button" class="duechip" data-act="clearTaskTime" aria-label="Remove time">${ui.taskTime}${ui.taskEnd ? '–' + ui.taskEnd : ''} ×</button>` : ''}
         <label class="duetog${ui.taskTime ? ' set' : ''}" title="Time"><input type="time" id="taskTime" value="${ui.taskTime}" aria-label="Time"><span>🕐</span></label>
         ${ui.taskTime ? `<label class="duetog${ui.taskEnd ? ' set' : ''}" title="End time"><input type="time" id="taskEnd" value="${ui.taskEnd}" aria-label="End time"><span>🏁</span></label>` : ''}
-        <label class="dailytog" title="Repeat Mon–Fri"><input type="checkbox" id="taskDaily" aria-label="Repeat Mon–Fri"${ui.dailyOn ? ' checked' : ''}><span>🔁</span></label>
+        <label class="dailytog" title="Repeat on days you pick"><input type="checkbox" id="taskDaily" aria-label="Repeat on days you pick"${ui.dailyOn ? ' checked' : ''}><span>🔁</span></label>
       </div>
       <button class="btn primary addbtn" type="submit" aria-label="Add">+</button>
     </form>
@@ -482,7 +509,7 @@ function emptyDay(d, today) {
   return `<div class="emptyday">
     <div class="ed-emo" aria-hidden="true">✨</div>
     <b>${d === today ? 'A fresh day' : 'Plan ahead'}</b>
-    <p class="muted small">Type what you want to get done in the box below.<br>Tap 🔁 first to make it repeat Mon–Fri.</p>
+    <p class="muted small">Type what you want to get done in the box below.<br>Tap 🔁 first to make it repeat on the days you pick.</p>
   </div>`;
 }
 
@@ -510,7 +537,7 @@ function celebrate() {
 function manageDaily() {
   const rs = routines();
   return `<div class="managebox">
-    <p class="muted small">These are added to your plan every day, or Mon–Fri only. Tap ✏️ to change the text, or tap the days to switch. Stop one to end it. Past days stay as they are.</p>
+    <p class="muted small">These are added to your plan only on the days lit up. Tap a day to turn it on or off, ✏️ to change the text, or Stop to end it. Past days stay as they are.</p>
     ${rs.length ? `<ul class="dailylist">${rs.map(r => ui.editing === r.id ? `<li><form class="editrow wrapedit" data-kind="daily" data-id="${r.id}" autocomplete="off">
       <textarea id="editInput" class="growbox" rows="1" maxlength="1000" enterkeyhint="done" aria-label="Daily activity">${U.esc(r.text)}</textarea>
       <span class="editbtns"><button type="submit" class="mini save">Save</button>
@@ -518,8 +545,8 @@ function manageDaily() {
     </form></li>` : `<li><span class="text">${U.esc(r.text)}</span>
       <span class="dailyacts"><button type="button" class="mini" data-act="editTask" data-id="${r.id}" aria-label="Edit text">✏️</button>
       <label class="mini pickdate">🕐 ${r.time || 'Time'}<input type="time" data-act="dailyTime" data-id="${r.id}" value="${r.time || ''}" aria-label="Time"></label>
-      <button type="button" class="mini" data-act="dailyDays" data-id="${r.id}">${r.days === 'weekdays' ? 'Mon–Fri' : 'Every day'}</button>
-      <button type="button" class="mini" data-act="stopDaily" data-id="${r.id}">Stop</button></span></li>`).join('')}</ul>`
+      <button type="button" class="mini" data-act="stopDaily" data-id="${r.id}">Stop</button></span>
+      ${dayPicker(routineWeekdays(r), 'routineDay', r.id)}</li>`).join('')}</ul>`
       : '<p class="muted small">No daily activities. Turn on 🔁 Daily when adding one.</p>'}
   </div>`;
 }
@@ -3245,7 +3272,7 @@ It will still come back on other days. To stop it for good, tap ⚙ Manage in th
   },
   stopDaily(el) {
     const r = Store.get('routines', el.dataset.id);
-    if (!r || !confirm(`Stop adding "${r.text}" every day?
+    if (!r || !confirm(`Stop repeating "${r.text}"?
 
 Past days and today stay as they are.`)) return;
     const today = U.today();
@@ -3256,28 +3283,39 @@ Past days and today stay as they are.`)) return;
     Store.remove('routines', r.id);
     toast('Stopped');
   },
-  dailyDays(el) {
+  // Turns one day on or off for a daily activity, from today on.
+  routineDay(el) {
     const r = Store.get('routines', el.dataset.id);
     if (!r || r.deleted) return;
+    const day = Number(el.dataset.day);
+    const had = routineWeekdays(r);
+    const days = had.includes(day) ? had.filter(d => d !== day) : [...had, day].sort((a, b) => a - b);
+    if (!days.length) return toast('Keep at least one day, or tap Stop.');
     const today = U.today();
-    const weekdays = r.days !== 'weekdays';
-    Store.upsert('routines', { ...r, days: weekdays ? 'weekdays' : 'all' });
-    if (weekdays) {
-      // Drop unticked weekend copies from today on.
-      for (const t of Store.list('tasks')) {
-        if (t.routine === r.id && t.date >= today && !t.done && isWeekend(t.date)) Store.remove('tasks', t.id);
-      }
-    } else {
-      // Bring back weekend copies removed by the switch, on the days being shown.
-      for (const d of routineDays()) {
-        const id = routineTaskId(r.id, d);
-        const t = Store.get('tasks', id);
-        if (d >= today && d >= routineStart(r) && isWeekend(d) && t && t.deleted) {
-          Store.upsert('tasks', { id, text: r.text, time: r.time || '', end: r.end || '', date: d, done: false, routine: r.id, createdAt: r.createdAt });
-        }
+    const next = { ...r, days };
+    Store.upsert('routines', next);
+    // Drop unticked copies on days that are now off.
+    for (const t of Store.list('tasks')) {
+      if (t.routine === r.id && t.date >= today && !t.done && !days.includes(U.weekdayMon(t.date))) Store.remove('tasks', t.id);
+    }
+    // Bring back copies removed when a day was off, on the days being shown.
+    for (const d of routineDays()) {
+      const id = routineTaskId(r.id, d);
+      const t = Store.get('tasks', id);
+      if (d >= today && routineOn(next, d) && t && t.deleted) {
+        Store.upsert('tasks', { id, text: r.text, time: r.time || '', end: r.end || '', date: d, done: false, routine: r.id, createdAt: r.createdAt });
       }
     }
-    toast(weekdays ? 'Now Mon–Fri only' : 'Now every day');
+    toast(`Now ${daysLabel(days)}`);
+  },
+  // Picks the days for the daily activity being typed. Changed in place so the
+  // box keeps what's typed and the keyboard stays put.
+  taskDay(el) {
+    const day = Number(el.dataset.day);
+    const on = !ui.taskDays.includes(day);
+    ui.taskDays = on ? [...ui.taskDays, day].sort((a, b) => a - b) : ui.taskDays.filter(d => d !== day);
+    el.classList.toggle('on', on);
+    el.setAttribute('aria-pressed', on);
   },
   moveToday(el) {
     const t = Store.get('tasks', el.dataset.id);
@@ -3492,7 +3530,7 @@ document.addEventListener('change', async e => {
     }
   } else if (el.id === 'taskDaily') {
     ui.dailyOn = el.checked;
-    $('#taskInput').placeholder = el.checked ? 'Add a daily activity…' : 'Add an activity…';
+    render(); // shows or hides the day buttons
     $('#taskInput').focus();
   } else if (el.id === 'noteDue') {
     ui.noteDue = el.value; render(); $('#noteInput').focus();
@@ -3593,22 +3631,25 @@ document.addEventListener('submit', e => {
     const input = $('#taskInput');
     const text = input.value.trim();
     if (!text) return;
-    // Clear the box and 🔁 first: saving redraws the page and would put them back.
     const daily = $('#taskDaily').checked;
+    const days = ui.taskDays;
+    if (daily && !days.length) return toast('Pick at least one day.');
+    // Clear the box and 🔁 first: saving redraws the page and would put them back.
     const time = ui.taskTime;
     const end = ui.taskEnd;
     input.value = '';
     ui.dailyOn = false;
+    ui.taskDays = [...MON_FRI];
     ui.taskTime = '';
     ui.taskEnd = '';
     if (daily) {
-      // New daily activities run Mon–Fri; added on a weekend, the first one is Monday.
+      // A new daily activity shows up only on the days picked, from the plan day on.
       const start = ui.planDate;
-      const r = Store.upsert('routines', { id: U.uid(), text, time, end, start, days: 'weekdays', createdAt: Date.now() });
-      if (!isWeekend(start)) {
+      const r = Store.upsert('routines', { id: U.uid(), text, time, end, start, days, createdAt: Date.now() });
+      if (days.includes(U.weekdayMon(start))) {
         Store.upsert('tasks', { id: routineTaskId(r.id, start), text, time, end, date: start, done: false, routine: r.id, createdAt: r.createdAt });
       }
-      toast(isWeekend(start) ? 'Added. It starts Monday and shows up Mon–Fri.' : 'Added. It will show up Mon–Fri.');
+      toast(`Added. It will show up ${daysLabel(days)}.`);
     } else {
       Store.upsert('tasks', { id: U.uid(), text, time, end, date: ui.planDate, done: false, createdAt: Date.now() });
     }
