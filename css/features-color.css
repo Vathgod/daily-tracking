@@ -206,6 +206,25 @@ body[data-tab="money"] .statrow { border-top-color: var(--c-money); }
 .tagpick input:checked + span { background: var(--blue); border-color: transparent; color: #fff; }
 .tagpick.mis input:checked + span { background: var(--neg); }
 .badge.tset { background: color-mix(in srgb, var(--blue) 16%, transparent); color: var(--blue); }
+.badge.emo { background: color-mix(in srgb, var(--violet) 16%, transparent); color: var(--violet); }
+.emochip.on { background: color-mix(in srgb, var(--violet) 14%, transparent); border-color: var(--violet); }
+.emochip.on .emoname { color: var(--violet); }
+.emolv button.on { background: var(--violet); color: #fff; }
+.emoname:focus-visible, .emolv button:focus-visible { outline: 2px solid var(--accent); }
+.emotbl .emorow.open td { font-weight: 700; }
+.ebars i.e-pos { background: var(--pos); }
+.ebars i.e-neg { background: var(--neg); }
+.ebars i.thin { opacity: .35; }
+.mini.mood.good { background: color-mix(in srgb, var(--pos) 16%, transparent); color: var(--pos); border-color: transparent; }
+.mini.mood.bad { background: var(--neg-bg); color: var(--neg); border-color: transparent; }
+/* Grades: green (A+) to red (D) */
+.g-ap { --g: var(--pos); }
+.g-a { --g: #14b8a6; }
+.g-b { --g: var(--blue); }
+.g-c { --g: var(--orange); }
+.g-d { --g: var(--neg); }
+.gradepick button.on { background: var(--g); border-color: transparent; color: #fff; }
+.badge.grade { background: color-mix(in srgb, var(--g) 18%, transparent); color: var(--g); }
 
 /* Equity curve */
 .eq-line.up { stroke: var(--pos); }

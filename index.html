@@ -80,6 +80,9 @@
         <label class="loss"><input type="radio" name="result" value="Loss"><span>Loss</span></label>
         <label class="be"><input type="radio" name="result" value="BE"><span>BE</span></label>
       </div>
+      <div class="field"><span>Grade <small class="muted">how good was the setup, win or lose?</small></span>
+        <div id="gradePick" class="gradepick" role="group" aria-label="Grade"></div>
+      </div>
       <div class="grid3">
         <label class="field"><span id="pointsLabel">Points</span><input name="points" inputmode="decimal" placeholder="100"></label>
         <label class="field"><span id="slLabel">SL (pts)</span><input name="slPts" inputmode="decimal" placeholder="optional"></label>
@@ -94,6 +97,9 @@
       </div>
       <div class="field"><span>Mistakes</span>
         <div id="mistakePick" class="catpick tagpick mis" role="group" aria-label="Mistakes"></div>
+      </div>
+      <div class="field"><span>Emotions <small class="muted">tap one, then rate it 1–5</small></span>
+        <div id="emoPick" class="emopick" role="group" aria-label="Emotions"></div>
       </div>
 
       <label class="field"><span>Note (optional)</span><textarea name="note" rows="4" maxlength="1000" placeholder="e.g. entered too early"></textarea></label>
@@ -399,7 +405,7 @@
   <dialog id="tagDlg" class="sheet">
     <form id="tagForm" autocomplete="off" novalidate>
       <div class="sheethead">
-        <h2 tabindex="-1" autofocus>Setups &amp; mistakes</h2>
+        <h2 tabindex="-1" autofocus>Setups, mistakes &amp; emotions</h2>
         <button type="button" class="icon" data-act="closeDlg" aria-label="Close">×</button>
       </div>
       <p class="muted small">Tap a name to change it. Tags already used on trades can be hidden with 🙈; they stay on old trades and in Stats.</p>
@@ -414,6 +420,12 @@
       <div class="catrow tagrow add">
         <input name="newMistake" maxlength="24" placeholder="New mistake, e.g. Early exit" aria-label="Mistake name">
         <button type="button" class="btn primary" data-act="addTag" data-v="mistake">Add</button>
+      </div>
+      <h3 class="sub">Emotions</h3>
+      <ul id="emotionList" class="catlist"></ul>
+      <div class="catrow tagrow add">
+        <input name="newEmotion" maxlength="24" placeholder="New emotion, e.g. Bored" aria-label="Emotion name">
+        <button type="button" class="btn primary" data-act="addTag" data-v="emotion">Add</button>
       </div>
       <div id="hiddenTags"></div>
     </form>

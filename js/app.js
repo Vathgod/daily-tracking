@@ -30,6 +30,10 @@ const ui = {
   recapDraft: null, // { date, text, rating, tags, shots } while a recap is written or edited
   recapDay: null, // day shown on the Trades tab's recap card (null = today)
   budgetsAll: false,
+  emoOpen: null, // emotion split by strength in Stats
+  emoChart: null, // emotion shown on the Stats strength chart (null = most used)
+  emoA: 'good', // Stats compare card: 'good', 'bad' or an emotion id
+  emoB: 'bad',
   walletWs: null, // Sunday of the week shown on the wallet card (null = this week)
   acct: lsGet('dt.acct', 'all'),
   dailyOn: false,
@@ -775,9 +779,12 @@ function tagRow(t) {
     : n
       ? `<button type="button" class="icon" data-act="hideTag" data-id="${U.esc(t.id)}" aria-label="Hide ${U.esc(t.name)}" title="Hide (keeps it on ${n} ${t.kind === 'day' ? 'day' : 'trade'}${n === 1 ? '' : 's'})">🙈</button>`
       : `<button type="button" class="icon del" data-act="delTag" data-id="${U.esc(t.id)}" aria-label="Delete ${U.esc(t.name)}">×</button>`;
-  return `<li class="catrow tagrow${t.hidden ? ' hid' : ''}">
+  const good = t.mood === 'good';
+  const mood = t.kind === 'emotion'
+    ? `<button type="button" class="mini mood ${good ? 'good' : 'bad'}" data-act="tagMood" data-id="${U.esc(t.id)}" aria-label="${U.esc(t.name)} is a ${good ? 'good' : 'bad'} emotion. Tap to change." title="Tap to switch good / bad">${good ? '👍 Good' : '👎 Bad'}</button>` : '';
+  return `<li class="catrow tagrow${t.kind === 'emotion' ? ' emo' : ''}${t.hidden ? ' hid' : ''}">
     <input data-tag="${U.esc(t.id)}" value="${U.esc(t.name)}" maxlength="24" aria-label="Name">
-    ${act}
+    ${mood}${act}
   </li>`;
 }
 
@@ -785,6 +792,7 @@ function renderTags() {
   const empty = '<li class="muted small">None yet. Add one below.</li>';
   $('#setupList').innerHTML = Tags.active('setup').map(tagRow).join('') || empty;
   $('#mistakeList').innerHTML = Tags.active('mistake').map(tagRow).join('') || empty;
+  $('#emotionList').innerHTML = Tags.active('emotion').map(tagRow).join('') || empty;
   const hidden = Tags.all().filter(t => t.hidden && t.kind !== 'day');
   $('#hiddenTags').innerHTML = hidden.length
     ? `<h3 class="sub">Hidden</h3><ul class="catlist">${hidden.map(tagRow).join('')}</ul>` : '';
@@ -794,13 +802,14 @@ function openTags() {
   const f = $('#tagForm');
   f.newSetup.value = '';
   f.newMistake.value = '';
+  f.newEmotion.value = '';
   renderTags();
   $('#tagDlg').showModal();
 }
 
 function saveTag(t, patch) {
-  const { id, kind, name, hidden, createdAt } = { ...t, ...patch };
-  Store.upsert('tags', { id, kind, name, hidden: !!hidden, createdAt: createdAt || 0 });
+  const { id, kind, name, hidden, createdAt, mood } = { ...t, ...patch };
+  Store.upsert('tags', { id, kind, name, hidden: !!hidden, createdAt: createdAt || 0, ...(kind === 'emotion' ? { mood: mood === 'good' ? 'good' : 'bad' } : {}) });
 }
 
 function tagTaken(kind, name, id) {
@@ -818,7 +827,7 @@ function renameTag(el) {
 }
 
 function addTag(kind) {
-  const input = $('#tagForm')[kind === 'setup' ? 'newSetup' : 'newMistake'];
+  const input = $('#tagForm')[{ setup: 'newSetup', mistake: 'newMistake', emotion: 'newEmotion' }[kind]];
   const name = input.value.trim();
   if (!name) return toast(`Type a name for the ${kind}.`);
   if (tagTaken(kind, name)) return toast(`"${name}" already exists.`);
@@ -879,7 +888,23 @@ function formTags() {
   return {
     setup: ($('#setupPick input:checked') || {}).value || '',
     mistakes: $$('#mistakePick input:checked').map(i => i.value),
+    emotions: form.emo.filter(e => Tags.get(e.id)).map(e => ({ ...e })),
   };
+}
+
+// Emotion chips in the trade form. A picked emotion shows 1-5 buttons for
+// how strong it was; tapping its name again takes it off.
+function renderEmoPick() {
+  const list = Tags.active('emotion');
+  for (const e of form.emo) if (!list.some(t => t.id === e.id) && Tags.get(e.id)) list.push(Tags.get(e.id));
+  $('#emoPick').innerHTML = list.map(t => {
+    const e = form.emo.find(x => x.id === t.id);
+    const name = U.esc(t.name);
+    const chip = `<button type="button" class="emoname" data-act="emoTag" data-id="${U.esc(t.id)}" aria-pressed="${!!e}">${name}</button>`;
+    if (!e) return `<span class="emochip">${chip}</span>`;
+    return `<span class="emochip on">${chip}<span class="emolv" role="group" aria-label="How strong">${[1, 2, 3, 4, 5].map(i =>
+      `<button type="button" class="${i === e.lv ? 'on' : ''}" data-act="emoLv" data-id="${U.esc(t.id)}" data-v="${i}" aria-label="${name} ${i} of 5" aria-pressed="${i === e.lv}">${i}</button>`).join('')}</span></span>`;
+  }).join('') + '<button type="button" class="catedit" data-act="manageTags">✏️ Edit</button>';
 }
 
 // ---------- Trades ----------
@@ -910,9 +935,9 @@ function shotCount(t) {
 }
 
 function tradeTags(t) {
-  const setup = Tags.setup(t), mis = Tags.mistakes(t);
-  if (!setup && !mis.length) return '';
-  return `<div class="ttags">${setup ? `<span class="badge tset">${U.esc(Tags.name(setup))}</span>` : ''}${mis.map(id => `<span class="badge red">${U.esc(Tags.name(id))}</span>`).join('')}</div>`;
+  const setup = Tags.setup(t), mis = Tags.mistakes(t), emo = Tags.emotions(t), g = gradeOf(t);
+  if (!g && !setup && !mis.length && !emo.length) return '';
+  return `<div class="ttags">${g ? `<span class="badge grade ${gradeCls(g)}" title="Grade ${g}">${g}</span>` : ''}${setup ? `<span class="badge tset">${U.esc(Tags.name(setup))}</span>` : ''}${mis.map(id => `<span class="badge red">${U.esc(Tags.name(id))}</span>`).join('')}${emo.map(e => `<span class="badge emo">${U.esc(Tags.name(e.id))} ${e.lv}</span>`).join('')}</div>`;
 }
 
 function sessSlug(s) {
@@ -1363,7 +1388,16 @@ function viewTrades() {
 
 // ---------- Trade form ----------
 
-const form = { id: null, shots: [], pnlTouched: false };
+const form = { id: null, shots: [], pnlTouched: false, emo: [], grade: '' };
+// Trade grades, best first. A grade rates the setup, not the result.
+const GRADES = ['A+', 'A', 'B', 'C', 'D'];
+const gradeOf = t => (GRADES.includes(t.grade) ? t.grade : '');
+const gradeCls = g => 'g-' + (g === 'A+' ? 'ap' : g.toLowerCase());
+
+function renderGradePick() {
+  $('#gradePick').innerHTML = GRADES.map(g =>
+    `<button type="button" class="${gradeCls(g)}${form.grade === g ? ' on' : ''}" data-act="pickGrade" data-v="${g}" aria-pressed="${form.grade === g}">${g}</button>`).join('');
+}
 const MAX_SHOTS = 4;
 const SHOT_TF = '1m'; // label every new photo starts with
 
@@ -1406,6 +1440,10 @@ function openTradeForm(id) {
   f.pnl.value = t ? abs(U.num(t.pnl)) : '';
   f.note.value = t ? t.note || '' : '';
   renderTagPick(t ? t.setup : lsGet('dt.lastSetup', ''), t ? t.mistakes : []);
+  form.emo = t ? Tags.emotions(t) : [];
+  renderEmoPick();
+  form.grade = t ? gradeOf(t) : '';
+  renderGradePick();
   // Keep a typed-over PnL; otherwise let it follow points × lot.
   const auto = autoPnl(f);
   form.pnlTouched = !!t && f.pnl.value !== '' && !(isFinite(auto) && Math.abs(auto - U.num(f.pnl.value)) < 0.005);
@@ -1435,6 +1473,7 @@ function readForm() {
     slPts: isFinite(sl) && sl > 0 ? String(Math.abs(sl)) : '',
     pnl: signed(f.pnl.value),
     note: f.note.value.trim(),
+    grade: form.grade,
     ...formTags(),
   };
 }
@@ -1553,6 +1592,8 @@ function saveTrade() {
   if (!shots.length) delete item.shots;
   if (!item.setup) delete item.setup;
   if (!item.mistakes.length) delete item.mistakes;
+  if (!item.emotions.length) delete item.emotions;
+  if (!item.grade) delete item.grade;
   // Older trades stored prices; points replace them.
   delete item.entry; delete item.sl; delete item.exit;
   Store.upsert('trades', item);
@@ -3035,7 +3076,173 @@ function tagTables(trades) {
       note: `Clean trades have no mistake tagged. A trade with two mistakes counts in both rows. All trades with a mistake: <b class="${U.cls(withMis)}">${U.money(withMis)}</b>.`,
     });
   }
+  out += gradeTable(trades) + emoCompare(trades) + emoChart(trades) + emoTable(trades);
   return out;
+}
+
+// Results by grade, best grade first, with A+ vs C/D in one line.
+function gradeTable(trades) {
+  if (!trades.some(gradeOf)) return '';
+  const NONE = 'No grade';
+  const rows = groupStats(trades, t => gradeOf(t) || NONE, [...GRADES, NONE]);
+  const top = trades.filter(t => gradeOf(t) === 'A+'), low = trades.filter(t => ['C', 'D'].includes(gradeOf(t)));
+  const p = list => `<b class="${U.cls(sumPnl(list))}">${U.money(sumPnl(list))}</b> (${list.length})`;
+  const line = top.length && low.length ? `A+ trades ${p(top)} · C/D trades ${p(low)}. ` : '';
+  return statTable('By grade', rows, null, {
+    rr: true,
+    note: `${line}Grade the setup before you look at the result, so a good trade that lost still counts as good.`,
+  });
+}
+
+// Emotions picked on trades in the range, in tag order.
+function emoUsed(trades) {
+  const used = new Set(trades.flatMap(t => Tags.emotions(t).map(e => e.id)));
+  return Tags.all('emotion').filter(t => used.has(t.id));
+}
+
+// Two groups of trades side by side: good-only vs any bad emotion by default,
+// or any two emotions.
+function emoCompare(trades) {
+  const used = emoUsed(trades);
+  const grades = GRADES.filter(g => trades.some(t => gradeOf(t) === g));
+  const groups = [
+    ...(used.length ? [['good', '😌 Good emotions only'], ['bad', '😡 Any bad emotion']] : []),
+    ...grades.map(g => ['g:' + g, 'Grade ' + g]),
+    ...used.map(t => [t.id, t.name]),
+  ];
+  if (groups.length < 2) return '';
+  const valid = v => groups.some(g => g[0] === v);
+  // Default: good vs bad emotions, or best vs worst grade.
+  const a = valid(ui.emoA) ? ui.emoA : groups[0][0];
+  const b = valid(ui.emoB) ? ui.emoB : used.length ? groups[1][0] : groups[grades.length - 1][0];
+  const pick = k => trades.filter(t => {
+    const emo = Tags.emotions(t);
+    if (k.startsWith('g:')) return gradeOf(t) === k.slice(2);
+    if (k === 'good') return emo.length && emo.every(e => Tags.good(e.id));
+    if (k === 'bad') return emo.some(e => !Tags.good(e.id));
+    return emo.some(e => e.id === k);
+  });
+  const sum = list => {
+    const w = list.filter(t => U.num(t.pnl) > 0).length, l = list.filter(t => U.num(t.pnl) < 0).length;
+    const rrs = list.map(t => U.calc(t).rr).filter(isFinite);
+    const pnl = sumPnl(list);
+    return {
+      n: list.length,
+      win: w + l ? w / (w + l) * 100 : NaN,
+      avg: list.length ? pnl / list.length : NaN,
+      rr: rrs.length ? rrs.reduce((x, y) => x + y, 0) / rrs.length : NaN,
+      pnl: list.length ? pnl : NaN,
+    };
+  };
+  const A = sum(pick(a)), B = sum(pick(b));
+  const sel = (id, v, label) => `<select id="${id}" class="emosel" aria-label="${label}">${groups.map(g =>
+    `<option value="${U.esc(g[0])}"${g[0] === v ? ' selected' : ''}>${U.esc(g[1])}</option>`).join('')}</select>`;
+  // The better side of each row is marked (only when both sides have trades).
+  const row = (label, key, fmt, cls) => {
+    const x = A[key], y = B[key], both = isFinite(x) && isFinite(y) && x !== y;
+    const td = (v, win) => `<td class="${cls ? U.cls(v) : ''}${both && win ? ' better' : ''}">${isFinite(v) ? fmt(v) : '–'}</td>`;
+    return `<tr><td>${label}</td>${td(x, x > y)}${td(y, y > x)}</tr>`;
+  };
+  return `<div class="card emocmp">
+    <h4 class="sub">Compare trades</h4>
+    <div class="emopair">${sel('emoA', a, 'First group')}<span class="muted">vs</span>${sel('emoB', b, 'Second group')}</div>
+    <table class="tbl">
+      <tbody>
+        <tr><td>Trades</td><td>${A.n}</td><td>${B.n}</td></tr>
+        ${row('Win %', 'win', v => Math.round(v) + '%')}
+        ${row('Avg PnL', 'avg', v => U.money(v), true)}
+        ${row('Avg RR', 'rr', v => U.fmtRR(v))}
+        ${row('Total PnL', 'pnl', v => U.money(v), true)}
+      </tbody>
+    </table>
+    <p class="muted small tblnote">★ marks the better side. Pick grades or emotions on either side.${used.length ? ' “Good emotions only” = every emotion on the trade is marked 👍. Change which ones are good in ✏️ Edit tags.' : ''}</p>
+  </div>`;
+}
+
+// Average PnL per trade at each strength (1-5) for one emotion.
+function emoChart(trades) {
+  const used = emoUsed(trades);
+  if (!used.length) return '';
+  const count = id => trades.filter(t => Tags.emotions(t).some(e => e.id === id)).length;
+  const cur = used.some(t => t.id === ui.emoChart) ? ui.emoChart : used.reduce((x, y) => (count(y.id) > count(x.id) ? y : x)).id;
+  const lv = [1, 2, 3, 4, 5].map(() => ({ n: 0, w: 0, l: 0, pnl: 0 }));
+  for (const t of trades) {
+    const e = Tags.emotions(t).find(x => x.id === cur);
+    if (!e) continue;
+    const s = lv[e.lv - 1], p = U.num(t.pnl) || 0;
+    s.n++; s.pnl += p;
+    if (p > 0) s.w++; else if (p < 0) s.l++;
+  }
+  const avgs = lv.map(s => (s.n ? s.pnl / s.n : 0));
+  const top = Math.max(0, ...avgs), bot = Math.max(0, ...avgs.map(v => -v));
+  const span = top + bot || 1;
+  const zero = top / span * 100; // zero line, % from the top
+  const short = v => `${v > 0 ? '+' : v < 0 ? '−' : ''}$${Math.abs(v) >= 100 ? Math.round(Math.abs(v)) : Math.abs(v).toFixed(Math.abs(v) >= 10 ? 0 : 2)}`;
+  const name = Tags.name(cur);
+  const cols = lv.map((s, i) => {
+    const v = avgs[i], h = Math.abs(v) / span * 100;
+    const tip = s.n
+      ? `${name} ${i + 1}: ${s.n} trade${s.n === 1 ? '' : 's'} · win ${s.w + s.l ? Math.round(s.w / (s.w + s.l) * 100) + '%' : '–'} · avg ${U.money(v)} · total ${U.money(s.pnl)}`
+      : `${name} ${i + 1}: no trades`;
+    const bar = s.n ? `<i class="${v >= 0 ? 'e-pos' : 'e-neg'}${s.n < 3 ? ' thin' : ''}" style="${v >= 0 ? `bottom:${100 - zero}%` : `top:${zero}%`};height:${Math.max(1.5, h)}%"></i>` : '';
+    return `<button type="button" class="bcol" data-act="barTip" data-tip="${U.esc(tip)}" title="${U.esc(tip)}">
+      <span class="bl">${s.n ? short(v) : ''}</span>
+      <span class="btrack"><b class="ezero" style="top:${zero}%"></b>${bar}</span>
+      <span class="bx"><b>${i + 1}</b><small>${s.n ? s.n + '×' : '–'}</small></span></button>`;
+  }).join('');
+  // One line comparing low with high, when both have trades.
+  const band = (from, to) => {
+    const g = lv.slice(from - 1, to);
+    const n = g.reduce((x, s) => x + s.n, 0);
+    return n ? g.reduce((x, s) => x + s.pnl, 0) / n : NaN;
+  };
+  const lo = band(1, 2), hi = band(4, 5);
+  const read = isFinite(lo) && isFinite(hi)
+    ? `<p class="small">${U.esc(name)} at <b>4–5</b> averages <b class="${U.cls(hi)}">${U.money(hi)}</b> a trade, vs <b class="${U.cls(lo)}">${U.money(lo)}</b> at <b>1–2</b>.</p>` : '';
+  return `<div class="card">
+    <h4 class="sub">${U.esc(name)} by strength</h4>
+    ${used.length > 1 ? chips('emoChart', cur, used.map(t => [t.id, U.esc(t.name)])) : ''}
+    <div class="bars few ebars" role="img" aria-label="${U.esc(name)}: average PnL per trade at each strength from 1 to 5">${cols}</div>
+    ${read}
+    <p class="muted small tblnote">Bars = average PnL per trade at each strength. Number under = trades. Faded bars have fewer than 3 trades, so don't trust them yet. Tap a bar for details.</p>
+  </div>`;
+}
+
+// Each emotion's trades, win rate, average strength and PnL. Tap one to
+// split it into low (1-2), mid (3) and high (4-5).
+function emoTable(trades) {
+  if (!trades.some(t => Tags.emotions(t).length)) return '';
+  const BANDS = [['Low 1–2', 1, 2], ['Mid 3', 3, 3], ['High 4–5', 4, 5]];
+  const blank = () => ({ n: 0, w: 0, l: 0, pnl: 0, lv: 0 });
+  const add = (s, p, lv) => { s.n++; s.pnl += p; s.lv += lv; if (p > 0) s.w++; else if (p < 0) s.l++; };
+  const g = {}, none = blank();
+  for (const t of trades) {
+    const p = U.num(t.pnl) || 0, emo = Tags.emotions(t);
+    if (!emo.length) add(none, p, 0);
+    for (const e of emo) {
+      const s = (g[e.id] ||= { ...blank(), bands: BANDS.map(blank) });
+      add(s, p, e.lv);
+      add(s.bands[BANDS.findIndex(b => e.lv >= b[1] && e.lv <= b[2])], p, e.lv);
+    }
+  }
+  const ids = Tags.all('emotion').map(t => t.id).filter(id => g[id]);
+  const win = s => (s.w + s.l ? Math.round(s.w / (s.w + s.l) * 100) + '%' : '–');
+  const cells = s => `<td>${s.n}</td><td>${win(s)}</td><td>${s.lv ? (s.lv / s.n).toFixed(1) : '–'}</td><td class="${U.cls(s.pnl)}">${U.money(s.pnl)}</td>`;
+  const rows = ids.map(id => {
+    const s = g[id], open = ui.emoOpen === id, name = U.esc(Tags.name(id));
+    let html = `<tr class="emorow${open ? ' open' : ''}"><td><button type="button" class="emoopen" data-act="emoOpen" data-id="${U.esc(id)}" aria-expanded="${open}">${open ? '▾' : '▸'} ${name}</button></td>${cells(s)}</tr>`;
+    if (open) html += BANDS.map((b, i) => s.bands[i].n ? `<tr class="emoband"><td>${b[0]}</td>${cells(s.bands[i])}</tr>` : '').join('');
+    return html;
+  });
+  if (none.n) rows.push(`<tr><td>No emotion</td><td>${none.n}</td><td>${win(none)}</td><td>–</td><td class="${U.cls(none.pnl)}">${U.money(none.pnl)}</td></tr>`);
+  return `<div class="card">
+    <h4 class="sub">Emotions</h4>
+    <table class="tbl emotbl">
+      <thead><tr><th></th><th>Trades</th><th>Win %</th><th>Avg 1–5</th><th>PnL</th></tr></thead>
+      <tbody>${rows.join('')}</tbody>
+    </table>
+    <p class="muted small tblnote">Tap an emotion to see how it went when it was low, mid or high. A trade with two emotions counts in both rows.</p>
+  </div>`;
 }
 
 // ---------- Weekly review ----------
@@ -3385,6 +3592,38 @@ Past days and today stay as they are.`)) return;
   showPair(el) { setPairHidden(el.dataset.id, false); },
   delPair(el) { delPair(el.dataset.id); },
   manageTags() { openTags(); },
+  emoTag(el) {
+    const id = el.dataset.id;
+    // New emotions start at 3; tapping a picked one takes it off.
+    form.emo = form.emo.some(e => e.id === id) ? form.emo.filter(e => e.id !== id) : [...form.emo, { id, lv: 3 }];
+    renderEmoPick();
+    const b = $(`#emoPick [data-act="emoTag"][data-id="${CSS.escape(id)}"]`);
+    if (b) b.focus();
+  },
+  emoLv(el) {
+    const e = form.emo.find(x => x.id === el.dataset.id);
+    if (e) e.lv = +el.dataset.v;
+    renderEmoPick();
+    const b = $(`#emoPick [data-act="emoLv"][data-id="${CSS.escape(el.dataset.id)}"][data-v="${el.dataset.v}"]`);
+    if (b) b.focus();
+  },
+  emoOpen(el) { ui.emoOpen = ui.emoOpen === el.dataset.id ? null : el.dataset.id; render(); },
+  emoChart(el) { ui.emoChart = el.dataset.v; render(); },
+  pickGrade(el) {
+    // Tapping the picked grade again clears it.
+    form.grade = form.grade === el.dataset.v ? '' : el.dataset.v;
+    renderGradePick();
+    const b = $(`#gradePick [data-v="${el.dataset.v}"]`);
+    if (b) b.focus();
+  },
+  tagMood(el) {
+    const t = Tags.get(el.dataset.id);
+    if (!t) return;
+    saveTag(t, { mood: t.mood === 'good' ? 'bad' : 'good' });
+    renderTags();
+    const b = $(`#tagForm [data-act="tagMood"][data-id="${CSS.escape(t.id)}"]`);
+    if (b) b.focus();
+  },
   openRecap(el) { openRecap(el.dataset.v); },
   recapStar(el) {
     const d = recapDraft(el.dataset.date);
@@ -3521,6 +3760,11 @@ document.addEventListener('change', async e => {
     d.tags = el.checked ? [...d.tags.filter(x => x !== el.dataset.daypick), el.dataset.daypick] : d.tags.filter(x => x !== el.dataset.daypick);
   } else if (el.dataset.daytag) {
     renameDayTag(el);
+  } else if (el.id === 'emoA' || el.id === 'emoB') {
+    ui[el.id] = el.value;
+    render();
+    const s = $('#' + el.id);
+    if (s) s.focus();
   } else if (el.dataset.act === 'toggleTask') {
     const t = Store.get('tasks', el.dataset.id);
     if (t) {
@@ -3728,6 +3972,7 @@ $('#tagForm').addEventListener('keydown', e => {
   e.preventDefault();
   if (e.target.name === 'newSetup') addTag('setup');
   else if (e.target.name === 'newMistake') addTag('mistake');
+  else if (e.target.name === 'newEmotion') addTag('emotion');
   else e.target.blur();
 });
 
@@ -3744,7 +3989,7 @@ $('#dayTagForm').addEventListener('keydown', e => {
 $('#dayTagDlg').addEventListener('close', () => redrawRecap());
 
 $('#tagDlg').addEventListener('close', () => {
-  if ($('#tradeDlg').open) { const t = formTags(); renderTagPick(t.setup, t.mistakes); }
+  if ($('#tradeDlg').open) { const t = formTags(); renderTagPick(t.setup, t.mistakes); renderEmoPick(); }
 });
 
 // The page isn't rebuilt under an open trade form, so catch up when it closes.
