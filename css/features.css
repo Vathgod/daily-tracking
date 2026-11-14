@@ -460,3 +460,31 @@ body:has(.wk) main { padding-bottom: 12px; }
   position: sticky; left: 0; z-index: 1; width: var(--tw); padding: 1px 0; text-align: center;
   border-radius: 6px; background: var(--pink); color: #fff; font-size: 11px; font-variant-numeric: tabular-nums;
 }
+/* Day note (Plan tab) */
+.journal { display: grid; gap: 10px; padding: 14px 16px; }
+.journal .sechead { margin-bottom: 0; }
+.journal .sectitle, .journaladd b { color: var(--pink); }
+.journaladd {
+  width: 100%; display: flex; align-items: center; gap: 10px; text-align: left; font: inherit; font-size: 14px; color: var(--muted);
+  border: 1px dashed color-mix(in srgb, var(--pink) 40%, var(--border)); background: none; border-radius: 12px; padding: 11px 14px; cursor: pointer;
+}
+.jhead { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; text-align: left; }
+.jmood { font-size: 13px; font-weight: 600; }
+.jtog { margin-left: auto; }
+.jtext { margin: 0; font-size: 15px; white-space: pre-line; overflow-wrap: anywhere; }
+.journal:not(.open) .jtext { color: var(--muted); font-size: 14px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.moods { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.mood {
+  display: grid; justify-items: center; gap: 2px; border: 1px solid var(--border); background: var(--surface-2);
+  border-radius: 12px; padding: 6px 2px; font: inherit; color: var(--muted); cursor: pointer;
+}
+.mood span { font-size: 22px; line-height: 1.1; filter: grayscale(.6); opacity: .7; }
+.mood small { font-size: 11px; font-weight: 600; }
+.mood.on { border-color: var(--pink); background: color-mix(in srgb, var(--pink) 14%, var(--surface-2)); color: var(--text); }
+.mood.on span { filter: none; opacity: 1; }
+.journaltext {
+  display: block; width: 100%; resize: none; min-height: 80px; max-height: 50vh; overflow-y: auto;
+  font: inherit; font-size: 15px; color: var(--text); background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px;
+}
+.journaltext:focus { outline: 2px solid var(--accent); outline-offset: -1px; }

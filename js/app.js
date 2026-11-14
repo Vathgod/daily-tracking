@@ -51,6 +51,8 @@ const ui = {
   editEnd: null, // end time in the activity edit box (null = not changed yet)
   schedOpen: null, // id of the activity open in the Schedule sheet
   notePick: null, // id of the note whose "add to plan" day picker is open
+  journalDraft: null, // { date, text, mood } while a day note is written or edited
+  journalOpen: null, // day whose saved day note is shown in full
 };
 
 // ---------- Helpers ----------
@@ -388,6 +390,89 @@ function scrollToNow() {
   wk.scrollTop = $('.wk-now').offsetTop - wk.clientHeight * 0.35;
 }
 
+// ---------- Day note ----------
+
+// A free note about how a day went and how it felt, with a 1-5 mood. It isn't
+// an activity: it never counts toward the day's % and can't be missed.
+// One per day, keyed by the date; today and earlier days only.
+const MOODS = [
+  { v: 1, e: '😞', name: 'Bad' },
+  { v: 2, e: '😕', name: 'Low' },
+  { v: 3, e: '😐', name: 'Okay' },
+  { v: 4, e: '🙂', name: 'Good' },
+  { v: 5, e: '😄', name: 'Great' },
+];
+
+function journalOf(date) {
+  const j = Store.get('journal', date);
+  return j && !j.deleted ? j : null;
+}
+
+function journalEditing(date) {
+  return !!ui.journalDraft && ui.journalDraft.date === date;
+}
+
+function startJournal(date) {
+  const j = journalOf(date) || {};
+  ui.journalDraft = { date, text: j.text || '', mood: j.mood || 0 };
+  render();
+  const box = $('.journaltext');
+  if (box) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
+}
+
+function saveJournal() {
+  const d = ui.journalDraft;
+  if (!d) return;
+  const old = journalOf(d.date);
+  const text = d.text.trim();
+  if (!text && !d.mood) {
+    if (!old) return toast('Write something or pick a mood first.');
+    ui.journalDraft = null;
+    Store.remove('journal', d.date);
+    return toast('Day note removed');
+  }
+  ui.journalDraft = null;
+  ui.journalOpen = null;
+  if (old && (old.text || '') === text && (old.mood || 0) === d.mood) return render();
+  Store.upsert('journal', { ...(old || { id: d.date, createdAt: Date.now() }), text, mood: d.mood });
+  toast('Day note saved 📔');
+}
+
+function moodOf(n) { return MOODS.find(m => m.v === n); }
+
+function journalCard(date) {
+  const title = date === U.today() ? 'Today' : 'This day';
+  if (journalEditing(date)) {
+    const d = ui.journalDraft;
+    return `<div class="card journal editing">
+      <div class="sechead"><h3 class="sectitle">📔 Day note</h3></div>
+      <div class="moods" role="group" aria-label="How did you feel?">${MOODS.map(m =>
+        `<button type="button" class="mood${d.mood === m.v ? ' on' : ''}" data-act="journalMood" data-v="${m.v}" aria-pressed="${d.mood === m.v}"><span>${m.e}</span><small>${m.name}</small></button>`).join('')}</div>
+      <textarea class="journaltext" rows="3" maxlength="4000" aria-label="Day note"
+        placeholder="How was ${title.toLowerCase()}? What happened, who you met, how you felt…">${U.esc(d.text)}</textarea>
+      <div class="actions">
+        <button type="button" class="btn ghost" data-act="journalCancel">Cancel</button>
+        <button type="button" class="btn primary grow" data-act="journalSave">Save</button>
+      </div>
+    </div>`;
+  }
+  const j = journalOf(date);
+  if (!j) {
+    return `<button type="button" class="journaladd" data-act="journalEdit">📔 <span>How was ${title.toLowerCase()}? <b>Write a day note</b></span></button>`;
+  }
+  const m = moodOf(j.mood);
+  const open = ui.journalOpen === date;
+  return `<div class="card journal${open ? ' open' : ''}">
+    <button type="button" class="jhead" data-act="journalToggle" aria-expanded="${open}">
+      <span class="sectitle">📔 Day note</span>
+      ${m ? `<span class="jmood">${m.e} ${m.name}</span>` : ''}
+      <span class="muted small jtog">${open ? 'Hide ▴' : 'Read ▾'}</span>
+    </button>
+    ${j.text ? `<p class="jtext">${U.esc(j.text)}</p>` : ''}
+    ${open ? '<button type="button" class="btn ghost block" data-act="journalEdit">✏️ Edit</button>' : ''}
+  </div>`;
+}
+
 function viewPlan() {
   if (ui.planMode === 'notes') return viewNotes();
   if (ui.planMode === 'schedule') return viewSchedule();
@@ -419,12 +504,14 @@ function viewPlan() {
           <label class="datepick"><span>${U.esc(U.fmtDate(d, { weekday: 'short', day: 'numeric', month: 'short', ...(d.slice(0, 4) !== today.slice(0, 4) && { year: 'numeric' }) }))}</span><input type="date" id="planDate" value="${d}" aria-label="Pick a date"></label>
           <button type="button" class="icon nav" data-act="planShift" data-v="1" aria-label="Next day">›</button>
         </div>
-        <div class="ph-count">${tasks.length ? `<b>${done.length}/${tasks.length}</b> done${band}` : '<span class="muted">No activities yet</span>'}</div>
+        <div class="ph-count">${tasks.length ? `<b>${done.length}/${tasks.length}</b> done${band}` : '<span class="muted">No activities yet</span>'}${journalOf(d) ? ' · <span title="Has a day note">📔</span>' : ''}</div>
       </div>
       ${d === today ? weekLine() : ''}
     </div>
     ${d !== today ? '<button type="button" class="linkbtn backtoday" data-act="planJump" data-v="today">↩ Back to today</button>' : ''}
     ${hint ? `<p class="hint">${hint}</p>` : ''}
+
+    ${d <= today ? journalCard(d) : ''}
 
     ${missedEarlier.length ? `<div class="missedwrap">
       <button type="button" class="missedline" data-act="toggleMissed" aria-expanded="${ui.missedOpen}">
@@ -1037,10 +1124,11 @@ function keepRecap(host, draw) {
   const el = document.activeElement;
   const key = !el || !host.contains(el) ? ''
     : el.classList.contains('recaptext') ? `.recaptext[data-date="${el.dataset.date}"]`
+    : el.classList.contains('journaltext') ? '.journaltext'
     : el.dataset.recapshot ? `[data-recapshot="${el.dataset.recapshot}"][data-date="${el.dataset.date}"]` : '';
   const sel = key && [el.selectionStart, el.selectionEnd];
   draw();
-  for (const box of host.querySelectorAll('.recaptext')) fitBox(box);
+  for (const box of host.querySelectorAll('.recaptext, .journaltext')) fitBox(box);
   const back = key && host.querySelector(key);
   if (back) { back.focus(); back.setSelectionRange(...sel); }
   loadRecapShots(host);
@@ -3658,6 +3746,18 @@ Past days and today stay as they are.`)) return;
     render();
   },
   recapCancel() { dropRecapDraft(); redrawRecap(); },
+  journalEdit() { startJournal(ui.planDate); },
+  journalSave() { saveJournal(); },
+  journalCancel() { ui.journalDraft = null; render(); },
+  journalToggle() { ui.journalOpen = ui.journalOpen === ui.planDate ? null : ui.planDate; render(); },
+  journalMood(el) {
+    const d = ui.journalDraft;
+    if (!d) return;
+    const n = +el.dataset.v;
+    // Tapping the picked mood again clears it.
+    d.mood = d.mood === n ? 0 : n;
+    render();
+  },
   addRecapShot(el) { pickRecapShots(el.dataset.date); },
   removeRecapShot(el) { removeRecapShot(el.dataset.date, +el.dataset.i); },
   viewRecapShot(el) { viewRecapShots(el); },
@@ -3851,6 +3951,7 @@ document.addEventListener('change', async e => {
 document.addEventListener('input', e => {
   if (e.target.classList.contains('growbox')) fitBox(e.target);
   if (e.target.classList.contains('recaptext')) { fitBox(e.target); recapDraft(e.target.dataset.date).text = e.target.value; return; }
+  if (e.target.classList.contains('journaltext')) { fitBox(e.target); if (ui.journalDraft) ui.journalDraft.text = e.target.value; return; }
   if (e.target.name === 'pnl') form.pnlTouched = e.target.value.trim() !== '';
   if (e.target.dataset.shot) {
     const x = form.shots[e.target.dataset.shot];
