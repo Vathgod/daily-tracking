@@ -495,3 +495,6 @@ body:has(.wk) main { padding-bottom: 12px; }
 .task .skip:hover, .task .skip:focus-visible { opacity: 1; filter: none; }
 .secbtns { display: flex; gap: 6px; }
 .wk-b.skipped { opacity: .4; border-style: dashed; --c: var(--muted); }
+/* Money day note mark on day headers */
+.mn-mark { border: 0; background: none; padding: 2px 4px; margin-left: 2px; font: inherit; font-size: 12px; cursor: pointer; vertical-align: middle; }
+.mn-mark:hover, .mn-mark:focus-visible { opacity: 1; }

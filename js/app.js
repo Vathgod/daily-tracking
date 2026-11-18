@@ -29,6 +29,7 @@ const ui = {
   recapOpen: null, // day (or tw- week note) open in the recap sheet
   recapDraft: null, // { date, text, rating, tags, shots } while a recap is written or edited
   recapDay: null, // day shown on the Trades tab's recap card (null = today)
+  moneyNoteDay: null, // day shown on the Money tab's note card (null = today)
   budgetsAll: false,
   emoOpen: null, // emotion split by strength in Stats
   emoChart: null, // emotion shown on the Stats strength chart (null = most used)
@@ -1063,6 +1064,11 @@ function sessTag(s) {
 // tw-<Monday> for a trading week, mw-<Sunday> for a money week.
 function isWeekNote(key) { return /^[tm]w-/.test(key); }
 
+// A money day note (no tags) is keyed md-<date>, apart from the trading recap.
+function isMoneyDay(key) { return key.startsWith('md-'); }
+function recapKind(key) { return isWeekNote(key) ? key.slice(0, 2) : isMoneyDay(key) ? 'md' : 'day'; }
+function recapName(key) { return { day: 'Recap', tw: 'Week note', mw: 'Week note', md: 'Money note' }[recapKind(key)]; }
+
 function recapOf(date) {
   const r = Store.get('recaps', date);
   return r && !r.deleted ? r : null;
@@ -1120,14 +1126,14 @@ function saveRecap(date) {
     return y;
   });
   setRecap(date, { text: d.text.trim(), rating: d.rating, tags: d.tags, shots });
-  const week = isWeekNote(date);
+  const name = recapName(date);
   if (!recapOf(date)) {
     redrawRecap();
-    if (had) toast(week ? 'Week note removed' : 'Recap removed');
-    else toast(`Write something, or add a star${week ? '' : ', tag'} or image first.`);
+    if (had) toast(`${name} removed`);
+    else toast(`Write something, or add a star${recapKind(date) === 'day' ? ', tag' : ''} or image first.`);
     return;
   }
-  toast(week ? 'Week note saved 📝' : 'Recap saved 📝');
+  toast(`${name} saved 📝`);
 }
 
 function redrawRecap() {
@@ -1229,11 +1235,12 @@ function removeRecapShot(date, i) {
 
 function recapStars(date, n, ro) {
   if (ro) return `<span class="stars ro" aria-label="${n} of 5">${'★'.repeat(n)}<i>${'★'.repeat(5 - n)}</i></span>`;
-  return `<span class="stars" role="group" aria-label="${date.startsWith('mw-') ? 'How well you kept to your money' : 'How well you traded'}">${[1, 2, 3, 4, 5].map(i =>
+  return `<span class="stars" role="group" aria-label="${/^m[wd]-/.test(date) ? 'How well you kept to your money' : 'How well you traded'}">${[1, 2, 3, 4, 5].map(i =>
     `<button type="button" class="star${i <= n ? ' on' : ''}" data-act="recapStar" data-date="${date}" data-v="${i}" aria-label="${i} star${i === 1 ? '' : 's'}">★</button>`).join('')}</span>`;
 }
 
 function recapTitle(date) {
+  if (isMoneyDay(date)) return `📝 ${date.slice(3) === U.today() ? "Today's money note" : 'Money note'}`;
   return `📝 ${isWeekNote(date) ? 'Week note' : date === U.today() ? "Today's recap" : 'Day recap'}`;
 }
 
@@ -1246,6 +1253,16 @@ function recapDay() {
 // today, and the stars go on their own line.
 function recapHead(date, stars, nav) {
   if (!nav) return `<div class="row recaphead"><h4 class="sub">${recapTitle(date)}</h4>${stars}</div>`;
+  if (isMoneyDay(date)) {
+    const day = date.slice(3);
+    const ex = Money.list(day, day);
+    return `<div class="row w-head recapnav">
+      <button type="button" class="icon nav" data-act="moneyNoteShift" data-v="-1" aria-label="Previous day">‹</button>
+      <span class="w-title"><b>📝 ${U.esc(U.dayLabel(day))}</b><span class="muted small">Money note · ${ex.length
+        ? `${ex.length} item${ex.length === 1 ? '' : 's'} · ${Money.fmt(Money.total(ex), false)}` : 'No spending'}</span></span>
+      <button type="button" class="icon nav" data-act="moneyNoteShift" data-v="1" aria-label="Next day"${day >= U.today() ? ' disabled' : ''}>›</button>
+    </div>${stars ? `<div class="recapstars">${stars}</div>` : ''}`;
+  }
   const st = tradesIn(date, date, 'all', 'all');
   const p = sumPnl(st);
   return `<div class="row w-head recapnav">
@@ -1260,19 +1277,25 @@ const RECAP_HINTS = {
   day: "How did the day go? e.g. no displacement, didn't check the news…",
   tw: 'How did the week go? What to keep or fix next week…',
   mw: 'How did the spending go? What to change next week…',
+  md: "What did you spend on and why? e.g. friend's birthday, no spend day 💪…",
 };
+
+// The Money tab card's day: today, unless ‹ stepped back to an earlier one.
+function moneyNoteDay() {
+  return ui.moneyNoteDay && ui.moneyNoteDay < U.today() ? ui.moneyNoteDay : U.today();
+}
 
 function recapEditor(date, nav) {
   const d = ui.recapDraft && ui.recapDraft.date === date ? ui.recapDraft : { text: '', rating: 0, tags: [], shots: [] };
   const saved = !!recapOf(date);
-  const week = isWeekNote(date);
+  const kind = recapKind(date);
   const picked = d.tags.map(Tags.get).filter(Boolean);
   return `<div class="recapedit">
     ${recapHead(date, recapStars(date, d.rating), nav)}
-    <textarea class="recaptext" data-date="${date}" rows="2" maxlength="2000" aria-label="${week ? 'Week note' : 'Day recap'}"
-      placeholder="${RECAP_HINTS[week ? date.slice(0, 2) : 'day']}">${U.esc(d.text)}</textarea>
+    <textarea class="recaptext" data-date="${date}" rows="2" maxlength="2000" aria-label="${kind === 'day' ? 'Day recap' : recapName(date)}"
+      placeholder="${RECAP_HINTS[kind]}">${U.esc(d.text)}</textarea>
     ${recapShots(date, d.shots, true)}
-    <div class="daytags">${week ? '' : `${picked.map(t => `<button type="button" class="dtag on" data-act="recapTag" data-date="${date}" data-id="${U.esc(t.id)}" aria-label="Remove ${U.esc(t.name)}">${U.esc(t.name)} <span aria-hidden="true">×</span></button>`).join('')}<button type="button" class="catedit" data-act="pickDayTags" data-date="${date}">🏷 Tags</button>`}${d.shots.length < MAX_SHOTS
+    <div class="daytags">${kind !== 'day' ? '' : `${picked.map(t => `<button type="button" class="dtag on" data-act="recapTag" data-date="${date}" data-id="${U.esc(t.id)}" aria-label="Remove ${U.esc(t.name)}">${U.esc(t.name)} <span aria-hidden="true">×</span></button>`).join('')}<button type="button" class="catedit" data-act="pickDayTags" data-date="${date}">🏷 Tags</button>`}${d.shots.length < MAX_SHOTS
       ? `<button type="button" class="catedit" data-act="addRecapShot" data-date="${date}">📷 Image</button>` : ''}</div>
     <div class="actions">
       ${saved || ui.recapDraft && ui.recapDraft.date === date ? `<button type="button" class="btn ghost" data-act="recapCancel">Cancel</button>` : ''}
@@ -1397,6 +1420,7 @@ function recapLine(date) {
 // The sheet holds a day's recap or a trading week's note.
 function renderRecapDlg() {
   const date = ui.recapOpen;
+  if (isMoneyDay(date)) return renderMoneyNoteDlg(date);
   const week = isWeekNote(date);
   const from = week ? date.slice(3) : date, to = week ? U.addDays(from, 6) : date;
   const st = tradesIn(from, to, 'all', 'all');
@@ -1409,6 +1433,29 @@ function renderRecapDlg() {
       ? ` · ${green} green · ${red} red day${red === 1 ? '' : 's'}` : ''} · <b class="${U.cls(p)}">${U.money(p)}</b>` : `No trades this ${week ? 'week' : 'day'}.`}</p>
       ${recapBox(date)}`;
   });
+}
+
+// The same sheet for a money day: the day's spending, then its note.
+function renderMoneyNoteDlg(key) {
+  const day = key.slice(3);
+  const ex = Money.list(day, day);
+  const limit = Money.dailyBudget(day);
+  const over = limit && Money.dayTotal(Money.weekOnly(ex)) > limit;
+  $('#recapTitle').textContent = `👛 ${U.dayLabel(day)}`;
+  keepRecap($('#recapBody'), () => {
+    $('#recapBody').innerHTML = `<p class="muted small">${ex.length ? `${ex.length} item${ex.length === 1 ? '' : 's'} · <b class="${over ? 'neg' : ''}">${Money.fmt(Money.total(ex), false)}</b>${limit ? ` · limit ${Money.fmt(limit, false)}` : ''}` : 'No spending this day.'}</p>
+      ${recapBox(key)}
+      ${ex.length ? `<div class="explist">${ex.map(expRow).join('')}</div>` : ''}`;
+  });
+}
+
+// A money day's mark: 📝 (and 📷 count) once it has a note, a faint 📝 before.
+// Tap it to write or read the note.
+function moneyNoteMark(day) {
+  const key = 'md-' + day;
+  const r = recapOf(key);
+  const n = Store.shotsOf(r).length;
+  return `<button type="button" class="wn-mark mn-mark${r ? '' : ' none'}" data-act="openRecap" data-v="${key}" aria-label="${r ? 'Read' : 'Write'} the money note for ${U.esc(U.dayLabel(day))}">📝${n ? ` 📷${n > 1 ? ' ' + n : ''}` : ''}</button>`;
 }
 
 // A week card's mark: 📝 (and 📷 count) once the week has a note, a faint 📝
@@ -1831,7 +1878,8 @@ function expRow(e) {
   </button>`;
 }
 
-function expGroups(list) {
+// With `notes`, each day header carries its money note mark.
+function expGroups(list, notes = true) {
   const groups = new Map();
   for (const e of list) {
     if (!groups.has(e.date)) groups.set(e.date, []);
@@ -1840,7 +1888,7 @@ function expGroups(list) {
   return [...groups].map(([date, items]) => {
     const t = Money.total(items);
     const limit = Money.dailyBudget(date);
-    return `<h3 class="dayhead"><span>${U.esc(U.dayLabel(date))}</span><span class="${limit && Money.dayTotal(items) > limit ? 'neg' : ''}">${Money.fmt(t, false)}</span></h3>
+    return `<h3 class="dayhead"><span>${U.esc(U.dayLabel(date))}${notes ? ' ' + moneyNoteMark(date) : ''}</span><span class="${limit && Money.dayTotal(items) > limit ? 'neg' : ''}">${Money.fmt(t, false)}</span></h3>
       <div class="explist">${items.map(expRow).join('')}</div>`;
   }).join('');
 }
@@ -2085,6 +2133,7 @@ function viewMoney() {
       <div><span>This month</span><b>${Money.fmt(month, false)}</b></div>
       <div><span>Avg / day</span><b>${Money.fmt(Money.perDay(month, monthFrom, today), false)}</b></div>
     </div>
+    <div class="card recapcard moneynote">${recapBox('md-' + moneyNoteDay(), true)}</div>
     <button type="button" class="btn primary block" data-act="addExp" data-b="">+ Add expense</button>
 
     ${chips('moneyRange', ui.moneyRange, [['today', 'Today'], ['week', 'This week'], ['month', 'Month'], ['all', 'All']])}
@@ -2276,7 +2325,7 @@ function renderBudget(id) {
       <button type="button" class="btn primary grow" data-act="addExp" data-v="${st.status === 'on' ? today : b.start}" data-b="${U.esc(b.id)}">+ Add expense</button>
     </div>
     ${catBreakdown(st.list)}
-    ${st.list.length ? expGroups(st.list) : '<p class="empty">Nothing spent from this budget yet.</p>'}`;
+    ${st.list.length ? expGroups(st.list, false) : '<p class="empty">Nothing spent from this budget yet.</p>'}`;
 }
 
 function openBudget(id) {
@@ -2689,7 +2738,7 @@ function viewCalendar() {
         + (b && b.n ? `<span class="dt">${b.n} trade${b.n > 1 ? 's' : ''}</span>`
           : firstTrade && ds >= firstTrade && ds < today && !isWeekend(ds) ? '<span class="dt">No trade</span>' : '');
     const due = dueBy[ds];
-    const pin = recaps[ds] ? '<span class="duepin hot" title="Day recap">📝</span>'
+    const pin = recaps[ds] || (moneyMode && recapOf('md-' + ds)) ? `<span class="duepin hot" title="${moneyMode ? 'Money note' : 'Day recap'}">📝</span>`
       : due ? `<span class="duepin${due.some(n => isHot(n, today)) ? ' hot' : ''}" title="${due.length} due">📌${due.length > 1 ? due.length : ''}</span>` : '';
     cells += `<button type="button" class="day ${cls}${ds === today ? ' today' : ''}${ds === ui.calDay ? ' sel' : ''}" data-act="calDay" data-v="${ds}">
       <span class="dn">${d}</span>${main}${pin}
@@ -2709,6 +2758,7 @@ function viewCalendar() {
     detail = `<div class="card">
       <h3 class="dayhead"><span>${U.esc(U.dayLabel(sel))}</span>${ex.length ? `<span class="${over ? 'neg' : ''}">${Money.fmt(t, false)}</span>` : ''}</h3>
       ${budgetMode ? on.map(budgetTotal).join('') : moneyWeekTotal(sel)}
+      ${budgetMode || sel > today ? '' : recapLine('md-' + sel) || `<button type="button" class="btn ghost block addday" data-act="openRecap" data-v="md-${sel}">📝 Write a money note</button>`}
       ${ex.length ? `<div class="explist">${ex.map(expRow).join('')}</div>` : `<p class="muted small">${budgetMode && !on.length ? 'No budget on this day.' : 'No spending.'}</p>`}
       ${!budgetMode ? `<button type="button" class="btn ghost block addday" data-act="addExp" data-v="${sel}" data-b="">+ Add expense for this day</button>`
         : on.length ? `<button type="button" class="btn ghost block addday" data-act="addExp" data-v="${sel}" data-b="${U.esc(on[0].id)}">+ Add expense for this day</button>` : ''}
@@ -3786,6 +3836,11 @@ Past days and today stay as they are.`)) return;
   recapShift(el) {
     const d = U.addDays(recapDay(), +el.dataset.v);
     ui.recapDay = d < U.today() ? d : null;
+    render();
+  },
+  moneyNoteShift(el) {
+    const d = U.addDays(moneyNoteDay(), +el.dataset.v);
+    ui.moneyNoteDay = d < U.today() ? d : null;
     render();
   },
   recapCancel() { dropRecapDraft(); redrawRecap(); },
