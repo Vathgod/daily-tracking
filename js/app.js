@@ -81,7 +81,7 @@ function tasksOn(date) {
 function nowHM() { return new Date().toTimeString().slice(0, 5); }
 
 // Late: today, its time has passed and it isn't ticked yet.
-function isLate(t, today = U.today()) { return !t.done && !!t.time && t.date === today && t.time <= nowHM(); }
+function isLate(t, today = U.today()) { return !t.done && !t.skipped && !!t.time && t.date === today && t.time <= nowHM(); }
 
 // Daily activities: each one puts a task on today (and on the plan day being
 // looked at, if it's later). The task id is fixed per routine and day, so two
@@ -157,7 +157,9 @@ function fillRoutines() {
 
 function sumPnl(trades) { return trades.reduce((s, t) => s + (U.num(t.pnl) || 0), 0); }
 
-function isMissed(task, today = U.today()) { return !task.done && task.date < today; }
+// A skipped daily activity (a busy day) is neither missed nor counted.
+function isMissed(task, today = U.today()) { return !task.done && !task.skipped && task.date < today; }
+function counted(list) { return list.filter(t => !t.skipped); }
 
 function chips(act, current, items) {
   return `<div class="chips">${items.map(([v, label]) =>
@@ -194,17 +196,22 @@ function taskRow(t, today, { showDate = false, tag = false } = {}) {
   const late = isLate(t, today);
   const time = t.time ? `<span class="ttime${late ? ' late' : ''}">${t.time}${t.end ? '–' + t.end : ''}${late ? ' · Late' : ''}</span>` : '';
   let tail = '';
-  if (missed && t.movedTo) {
+  // Only daily activities can be skipped; one-off ones are done or moved.
+  const canSkip = t.routine && !t.done && !t.skipped;
+  if (t.skipped) {
+    tail = `<span class="badge muted">⏭ Skipped</span><button type="button" class="mini" data-act="unskipTask" data-id="${t.id}">Undo</button>`;
+  } else if (missed && t.movedTo) {
     tail = `<span class="badge muted">Moved → ${U.esc(U.fmtDate(t.movedTo, { day: 'numeric', month: 'short' }))}</span>`;
   } else if (missed && t.routine) {
     tail = `<span class="badge red">Missed</span>`;
   } else if (missed) {
     tail = `<span class="badge red">Missed</span><button type="button" class="mini" data-act="moveToday" data-id="${t.id}">→ Today</button>`;
   }
-  return `<li class="task${t.done ? ' done' : ''}${missed ? ' missed' : ''}${late ? ' late' : ''}">
+  return `<li class="task${t.done ? ' done' : ''}${t.skipped ? ' skipped' : ''}${missed ? ' missed' : ''}${late ? ' late' : ''}">
     <label class="check"><input type="checkbox" data-act="toggleTask" data-id="${t.id}"${t.done ? ' checked' : ''}><span class="box" aria-hidden="true"></span>
       ${time}<span class="text">${U.esc(t.text)}${tag && t.routine ? ' <span class="badge daily">🔁</span>' : ''}${showDate ? `<small>${U.esc(U.fmtDate(t.date, { weekday: 'short', day: 'numeric', month: 'short' }))}</small>` : ''}</span></label>
     ${tail}
+    ${canSkip ? `<button type="button" class="icon skip" data-act="skipTask" data-id="${t.id}" aria-label="Skip this day" title="Skip this day">⏭</button>` : ''}
     <button type="button" class="icon edit" data-act="editTask" data-id="${t.id}" aria-label="Edit">✏️</button>
     <button type="button" class="icon del" data-act="delTask" data-id="${t.id}" aria-label="Delete">×</button>
   </li>`;
@@ -331,7 +338,7 @@ function schedColor(text) {
 }
 
 function schedBlock(t, today) {
-  const state = t.done ? ' done' : t.movedTo ? ' moved' : isMissed(t, today) ? ' missed' : isLate(t, today) ? ' late' : '';
+  const state = t.done ? ' done' : t.skipped ? ' skipped' : t.movedTo ? ' moved' : isMissed(t, today) ? ' missed' : isLate(t, today) ? ' late' : '';
   const when = t.time ? `${t.time}${t.end ? '–' + t.end : ''}` : '';
   const label = `${t.text}, ${U.fmtDate(t.date, { weekday: 'short' })}${t.time ? ` ${t.time}${t.end ? ' to ' + t.end : ''}` : ''}`;
   return `<button type="button" class="wk-b wc${schedColor(t.text)}${state}" data-act="schedOpen" data-id="${t.id}" aria-label="${U.esc(label)}">${when ? `<small>${when}</small>` : ''}<b>${U.esc(t.text)}</b></button>`;
@@ -372,9 +379,11 @@ function renderSchedDlg() {
   if (!t || t.deleted) return $('#schedDlg').close();
   const today = U.today();
   const when = t.time ? `${t.time}${t.end ? '–' + t.end : ''}` : 'No time';
-  $('#schedBody').innerHTML = `<p class="muted small">${U.esc(U.fmtDate(t.date, { weekday: 'long', day: 'numeric', month: 'short' }))} · ${when}${isLate(t, today) ? ' · Late' : isMissed(t, today) ? ' · Missed' : ''}</p>
-    <ul class="tasks"><li class="task${t.done ? ' done' : ''}${isMissed(t, today) ? ' missed' : ''}">
+  $('#schedBody').innerHTML = `<p class="muted small">${U.esc(U.fmtDate(t.date, { weekday: 'long', day: 'numeric', month: 'short' }))} · ${when}${t.skipped ? ' · Skipped' : isLate(t, today) ? ' · Late' : isMissed(t, today) ? ' · Missed' : ''}</p>
+    <ul class="tasks"><li class="task${t.done ? ' done' : ''}${t.skipped ? ' skipped' : ''}${isMissed(t, today) ? ' missed' : ''}">
       <label class="check"><input type="checkbox" data-act="toggleTask" data-id="${t.id}"${t.done ? ' checked' : ''}><span class="box" aria-hidden="true"></span><span class="text">${U.esc(t.text)}</span></label>
+      ${t.skipped ? `<button type="button" class="mini" data-act="unskipTask" data-id="${t.id}">Undo skip</button>`
+        : t.routine && !t.done ? `<button type="button" class="mini" data-act="skipTask" data-id="${t.id}">⏭ Skip</button>` : ''}
     </li></ul>
     <div class="actions">
       <button type="button" class="btn danger" data-act="delTask" data-id="${t.id}">Delete</button>
@@ -479,7 +488,9 @@ function viewPlan() {
   const today = U.today();
   const tomorrow = U.addDays(today, 1);
   const d = ui.planDate;
-  const tasks = tasksOn(d);
+  const all = tasksOn(d);
+  const skipped = all.filter(t => t.skipped);
+  const tasks = counted(all); // what the % is made of
   const done = tasks.filter(t => t.done);
   const pct = tasks.length ? Math.round(done.length / tasks.length * 100) : 0;
   const daily = tasks.filter(t => t.routine && !t.done);
@@ -504,7 +515,7 @@ function viewPlan() {
           <label class="datepick"><span>${U.esc(U.fmtDate(d, { weekday: 'short', day: 'numeric', month: 'short', ...(d.slice(0, 4) !== today.slice(0, 4) && { year: 'numeric' }) }))}</span><input type="date" id="planDate" value="${d}" aria-label="Pick a date"></label>
           <button type="button" class="icon nav" data-act="planShift" data-v="1" aria-label="Next day">›</button>
         </div>
-        <div class="ph-count">${tasks.length ? `<b>${done.length}/${tasks.length}</b> done${band}` : '<span class="muted">No activities yet</span>'}${journalOf(d) ? ' · <span title="Has a day note">📔</span>' : ''}</div>
+        <div class="ph-count">${tasks.length ? `<b>${done.length}/${tasks.length}</b> done${band}` : skipped.length ? '<span class="muted">All skipped · rest day</span>' : '<span class="muted">No activities yet</span>'}${journalOf(d) ? ' · <span title="Has a day note">📔</span>' : ''}</div>
       </div>
       ${d === today ? weekLine() : ''}
     </div>
@@ -521,9 +532,11 @@ function viewPlan() {
 
     ${showDaily ? `<div class="plansec daily">
       <div class="sechead"><h3 class="sectitle">🔁 Daily</h3>
-        <button type="button" class="mini" data-act="toggleManage" aria-expanded="${ui.manageOpen}">${ui.manageOpen ? 'Close' : '⚙ Manage'}</button></div>
+        <span class="secbtns">${daily.length >= 2 ? '<button type="button" class="mini" data-act="skipAllDaily">⏭ Skip all</button>' : ''}
+        <button type="button" class="mini" data-act="toggleManage" aria-expanded="${ui.manageOpen}">${ui.manageOpen ? 'Close' : '⚙ Manage'}</button></span></div>
       ${ui.manageOpen ? manageDaily() : ''}
-      ${daily.length ? taskList(daily, today) : `<p class="muted small secnote">${tasks.some(t => t.routine) ? 'All daily activities done ✓' : 'None on this day.'}</p>`}
+      ${daily.length ? taskList(daily, today) : `<p class="muted small secnote">${tasks.some(t => t.routine) ? `All daily activities done${skipped.length ? ' or skipped' : ''} ✓`
+        : skipped.length ? 'All daily activities skipped on this day.' : 'None on this day.'}</p>`}
     </div>` : ''}
 
     ${other.length || !showDaily ? `<div class="plansec">
@@ -535,6 +548,11 @@ function viewPlan() {
       <button type="button" class="sechead donehead" data-act="toggleDone" aria-expanded="${ui.doneOpen}">
         <span class="sectitle">✓ Done <span class="badge muted">${done.length}</span></span><span class="muted small">${ui.doneOpen ? 'Hide ▴' : 'Show ▾'}</span></button>
       ${ui.doneOpen ? taskList(done, today, { tag: true }) : ''}
+    </div>` : ''}
+
+    ${skipped.length ? `<div class="plansec skipsec">
+      <div class="sechead"><h3 class="sectitle">⏭ Skipped <span class="badge muted">${skipped.length}</span></h3><span class="muted small">Not counted in the %</span></div>
+      ${taskList(skipped, today)}
     </div>` : ''}
 
     <form id="taskForm" class="addrow dock${ui.dailyOn ? ' daily' : ''}" autocomplete="off">
@@ -2625,7 +2643,7 @@ function viewCalendar() {
   const allTasks = Store.list('tasks').filter(t => t.date >= first && t.date <= last);
   const byDay = {};
   for (const t of trades) (byDay[t.date] ||= { pnl: 0, n: 0, tasks: 0, done: 0 }).pnl += U.num(t.pnl) || 0, byDay[t.date].n++;
-  for (const t of allTasks) { const b = (byDay[t.date] ||= { pnl: 0, n: 0, tasks: 0, done: 0 }); b.tasks++; if (t.done) b.done++; }
+  for (const t of counted(allTasks)) { const b = (byDay[t.date] ||= { pnl: 0, n: 0, tasks: 0, done: 0 }); b.tasks++; if (t.done) b.done++; }
   const dayVals = Object.values(byDay).filter(b => b.n);
   const greenDays = dayVals.filter(b => b.pnl > 0).length;
   const redDays = dayVals.filter(b => b.pnl < 0).length;
@@ -2697,9 +2715,10 @@ function viewCalendar() {
     </div>`;
   } else if (sel && tasksMode) {
     const tk = tasksOn(sel);
-    const done = tk.filter(t => t.done).length;
+    const ct = counted(tk);
+    const done = ct.filter(t => t.done).length;
     detail = `<div class="card">
-      <h3 class="dayhead"><span>${U.esc(U.dayLabel(sel))}</span>${tk.length ? `<span class="${done === tk.length ? 'pos' : ''}">${done}/${tk.length} done</span>` : ''}</h3>
+      <h3 class="dayhead"><span>${U.esc(U.dayLabel(sel))}</span>${ct.length ? `<span class="${done === ct.length ? 'pos' : ''}">${done}/${ct.length} done</span>` : tk.length ? '<span class="muted">All skipped</span>' : ''}</h3>
       ${tk.length ? taskList(tk, today, { tag: true }) : '<p class="muted small">No activities.</p>'}
     </div>`;
     if (dueBy[sel]) {
@@ -2826,17 +2845,19 @@ function viewActivities(from, to) {
     <div class="tiles">
       ${tile('Avg completion', isFinite(s.avg) ? Math.round(s.avg) + '%' : '–', '', isFinite(s.avg) ? Perf.bandLabel(Perf.band(s.avg)) : 'no finished days yet')}
       ${tile('Streak 🔥', `${st.current} day${st.current === 1 ? '' : 's'}`, '', `best ${st.best} · days at 70%+`)}
-      ${tile('Done', s.done, 'pos', `of ${s.planned} planned`)}
+      ${tile('Done', s.done, 'pos', `of ${s.planned} planned${s.skipped ? ` · ⏭ ${s.skipped} skipped` : ''}`)}
       ${tile('Missed', s.missed, s.missed ? 'neg' : '', 'incl. moved')}
       ${tile('Perfect days', s.perfect, '', `of ${s.tracked} day${s.tracked === 1 ? '' : 's'}`)}
       ${tile('Today so far', todayScore ? Math.round(todayScore.pct) + '%' : '–', '', todayScore ? `${todayScore.done}/${todayScore.total}` : 'nothing planned')}
     </div>
     ${barChart(from, to)}
-    ${s.bestWeekday || s.mostMissed.length ? `<div class="card insights">
+    ${s.bestWeekday || s.mostMissed.length || s.mostSkipped.length ? `<div class="card insights">
       ${s.bestWeekday ? `<p>💪 Best day: <b>${s.bestWeekday.name}</b> (${Math.round(s.bestWeekday.avg)}%)</p>
         <p>😴 Weakest day: <b>${s.worstWeekday.name}</b> (${Math.round(s.worstWeekday.avg)}%)</p>` : ''}
       ${s.mostMissed.length ? `<h4 class="sub">Most missed</h4><ul class="missedlist">${s.mostMissed.map(m =>
         `<li><span>${U.esc(m.text)}</span><b class="neg">${m.n}×</b></li>`).join('')}</ul>` : ''}
+      ${s.mostSkipped.length ? `<h4 class="sub">Most skipped</h4><ul class="missedlist">${s.mostSkipped.map(m =>
+        `<li><span>${U.esc(m.text)}</span><b class="muted">${m.n}×</b></li>`).join('')}</ul>` : ''}
     </div>` : ''}
     <button type="button" class="btn ghost block" data-act="lastWeek">📋 Last week's review</button>`;
 }
@@ -3349,7 +3370,7 @@ function reviewHTML(from, to) {
     <h3 class="sub">☑ Activities</h3>
     <div class="tiles">
       <div class="tile"><span>Avg completion</span><b>${isFinite(s.avg) ? Math.round(s.avg) + '%' : '–'}</b><small>${isFinite(s.avg) ? Perf.bandLabel(Perf.band(s.avg)) : 'nothing planned'}</small></div>
-      <div class="tile"><span>Done</span><b class="pos">${s.done}</b><small>of ${s.planned} planned</small></div>
+      <div class="tile"><span>Done</span><b class="pos">${s.done}</b><small>of ${s.planned} planned${s.skipped ? ` · ⏭ ${s.skipped} skipped` : ''}</small></div>
       <div class="tile"><span>Missed</span><b class="${s.missed ? 'neg' : ''}">${s.missed}</b></div>
       <div class="tile"><span>Perfect days</span><b>${s.perfect}/${s.tracked}</b></div>
       <div class="tile"><span>Streak now 🔥</span><b>${st.current}</b><small>best ${st.best}</small></div>
@@ -3526,6 +3547,28 @@ const actions = {
 It will still come back on other days. To stop it for good, tap ⚙ Manage in the Daily section.`
       : `Delete "${t.text}"?`;
     if (confirm(msg)) Store.remove('tasks', t.id);
+  },
+  // Skipping is for a daily activity on a busy day: it leaves the day's %
+  // instead of counting as missed. One-off activities can't be skipped.
+  skipTask(el) {
+    const t = Store.get('tasks', el.dataset.id);
+    if (!t || t.deleted || !t.routine || t.done) return;
+    Store.upsert('tasks', { ...t, skipped: true, skippedAt: Date.now() });
+    toast(`Skipped "${t.text}" · not counted`);
+  },
+  unskipTask(el) {
+    const t = Store.get('tasks', el.dataset.id);
+    if (!t || t.deleted) return;
+    Store.upsert('tasks', { ...t, skipped: false, skippedAt: null });
+  },
+  skipAllDaily() {
+    const left = tasksOn(ui.planDate).filter(t => t.routine && !t.done && !t.skipped);
+    if (!left.length || !confirm(`Skip all ${left.length} daily activities left on this day?
+
+They won't count in the day's %. Ones already done stay done.`)) return;
+    const now = Date.now();
+    for (const t of left) Store.upsert('tasks', { ...t, skipped: true, skippedAt: now });
+    toast(`Skipped ${left.length} · busy day`);
   },
   editTask(el) { ui.editing = el.dataset.id; ui.editTime = null; ui.editEnd = null; render(); },
   clearTaskTime() { ui.taskTime = ''; ui.taskEnd = ''; render(); $('#taskInput').focus(); },
@@ -3868,9 +3911,10 @@ document.addEventListener('change', async e => {
   } else if (el.dataset.act === 'toggleTask') {
     const t = Store.get('tasks', el.dataset.id);
     if (t) {
-      Store.upsert('tasks', { ...t, done: el.checked, doneAt: el.checked ? Date.now() : null });
+      // Ticking a skipped one means it got done after all.
+      Store.upsert('tasks', { ...t, done: el.checked, doneAt: el.checked ? Date.now() : null, skipped: false });
       const day = tasksOn(t.date);
-      if (el.checked && t.date === ui.planDate && ui.tab === 'plan' && day.every(x => x.done)) celebrate();
+      if (el.checked && t.date === ui.planDate && ui.tab === 'plan' && day.every(x => x.done || x.skipped)) celebrate();
     }
   } else if (el.id === 'taskDaily') {
     ui.dailyOn = el.checked;

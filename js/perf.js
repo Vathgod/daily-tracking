@@ -18,11 +18,12 @@ const Perf = {
     return { perfect: 'Perfect', good: 'Good', ok: 'Okay', bad: 'Bad', none: '–' }[b];
   },
 
-  // date -> { total, done, pct }
+  // date -> { total, done, pct }. Skipped daily activities don't count at
+  // all, so a day where everything was skipped is like a rest day.
   days(from, to) {
     const m = {};
     for (const t of Store.list('tasks')) {
-      if (t.date < from || t.date > to) continue;
+      if (t.date < from || t.date > to || t.skipped) continue;
       const d = (m[t.date] ||= { total: 0, done: 0 });
       d.total++;
       if (t.done) d.done++;
@@ -49,6 +50,7 @@ const Perf = {
       good: list.filter(([, d]) => d.pct >= GOOD).length,
     };
     s.missed = s.planned - s.done;
+    s.skipped = 0;
 
     // Average score per weekday (Mon..Sun)
     const wd = Array.from({ length: 7 }, () => ({ sum: 0, n: 0 }));
@@ -61,14 +63,17 @@ const Perf = {
       if (s.bestWeekday.avg === s.worstWeekday.avg) s.bestWeekday = s.worstWeekday = null;
     }
 
-    // Activities skipped most often (same text, any capitalisation)
-    const missed = {};
+    // Activities missed and skipped most often (same text, any capitalisation)
+    const missed = {}, skipped = {};
     for (const t of Store.list('tasks')) {
       if (t.date < from || t.date > end || t.done) continue;
+      if (t.skipped) s.skipped++;
       const k = t.text.trim().toLowerCase();
-      (missed[k] ||= { text: t.text.trim(), n: 0 }).n++;
+      ((t.skipped ? skipped : missed)[k] ||= { text: t.text.trim(), n: 0 }).n++;
     }
-    s.mostMissed = Object.values(missed).filter(m => m.n >= 2).sort((a, b) => b.n - a.n).slice(0, 3);
+    const top = o => Object.values(o).filter(m => m.n >= 2).sort((a, b) => b.n - a.n).slice(0, 3);
+    s.mostMissed = top(missed);
+    s.mostSkipped = top(skipped);
     return s;
   },
 

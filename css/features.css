@@ -488,3 +488,10 @@ body:has(.wk) main { padding-bottom: 12px; }
   border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px;
 }
 .journaltext:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+/* Skipped daily activities (busy day): grey, not counted */
+.task.skipped { opacity: .6; border-style: dashed; border-left-style: solid; border-left-color: var(--muted); }
+.task.skipped .text { color: var(--muted); }
+.task .skip { font-size: 14px; min-width: 32px; min-height: 32px; opacity: .45; filter: grayscale(1); }
+.task .skip:hover, .task .skip:focus-visible { opacity: 1; filter: none; }
+.secbtns { display: flex; gap: 6px; }
+.wk-b.skipped { opacity: .4; border-style: dashed; --c: var(--muted); }
